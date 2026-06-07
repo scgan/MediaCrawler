@@ -104,16 +104,21 @@ RUN if [ -f "uv.lock" ]; then \
         uv sync --python /usr/local/bin/python; \
     fi
 
-# 6. 安装 Playwright 浏览器（使用国内镜像）
-# 先安装 playwright
+# 6. 安装 Playwright
 RUN uv run --python /usr/local/bin/python pip install playwright
-# 然后安装浏览器，跳过系统依赖检查
-RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-    uv run --python /usr/local/bin/python playwright install --skip-system-deps-check chromium
 
-# 7. 验证安装
+# 7. 安装 Playwright 浏览器（使用国内镜像）
+# 先检查可用的 playwright 版本和选项
 RUN uv run --python /usr/local/bin/python playwright --version && \
-    uv run --python /usr/local/bin/python playwright install --list
+    uv run --python /usr/local/bin/python playwright install --help
+
+# 8. 安装浏览器，跳过依赖检查，因为我们已经手动安装了
+RUN PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST} \
+    PLAYWRIGHT_CDN_MIRROR=${PLAYWRIGHT_CDN_MIRROR} \
+    uv run --python /usr/local/bin/python playwright install chromium --with-deps
+
+# 9. 验证安装
+RUN uv run --python /usr/local/bin/python playwright --version
 
 COPY . .
 RUN mkdir -p /app/data /app/logs /app/cache /app/browser_data
