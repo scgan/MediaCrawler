@@ -123,6 +123,10 @@ class CrawlerManager:
             await self._push_log(entry)
 
             try:
+                popen_kwargs = {}
+                if os.name != "nt":
+                    popen_kwargs["start_new_session"] = True
+
                 # Start subprocess
                 self.process = subprocess.Popen(
                     cmd,
@@ -133,7 +137,8 @@ class CrawlerManager:
                     bufsize=1,
                     # cwd=str(self._project_root),
                     cwd=str(PROJECT_ROOT),
-                    env={**os.environ, "PYTHONUNBUFFERED": "1"}
+                    env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                    **popen_kwargs,
                 )
 
                 self.status = "running"
@@ -167,7 +172,10 @@ class CrawlerManager:
             await self._push_log(entry)
 
             try:
-                self.process.send_signal(signal.SIGTERM)
+                if os.name != "nt":
+                    os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                else:
+                    self.process.send_signal(signal.SIGTERM)
 
                 # Wait for graceful exit (up to 15 seconds)
                 for _ in range(30):
@@ -179,7 +187,10 @@ class CrawlerManager:
                 if self.process.poll() is None:
                     entry = self._create_log_entry("Process not responding, sending SIGKILL...", "warning")
                     await self._push_log(entry)
-                    self.process.kill()
+                    if os.name != "nt":
+                        os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+                    else:
+                        self.process.kill()
 
                 entry = self._create_log_entry("Crawler process terminated", "info")
                 await self._push_log(entry)
