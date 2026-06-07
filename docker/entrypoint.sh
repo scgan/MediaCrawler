@@ -1,4 +1,4 @@
-
+#!/usr/bin/env bash
 set -e
 
 export DISPLAY="${DISPLAY:-:99}"
