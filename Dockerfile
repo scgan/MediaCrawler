@@ -1,8 +1,7 @@
-FROM python:3.11-bookworm
+FROM docker.1ms.run/library/python:3.12-bookworm
 
 WORKDIR /app
 
-# 环境变量
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_NO_CACHE_DIR=1
