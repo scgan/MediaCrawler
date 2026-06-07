@@ -1,3 +1,6 @@
 *.js linguist-language=python
 *.css linguist-language=python
 *.html linguist-language=python
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf

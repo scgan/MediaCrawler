@@ -379,11 +379,11 @@ class WeiboCrawler(AbstractCrawler):
                     "height": 1080
                 },
                 user_agent=user_agent,
-                channel="chrome",  # Use system's Chrome stable version
+                channel=config.BROWSER_CHANNEL,
             )
             return browser_context
         else:
-            browser = await chromium.launch(headless=headless, proxy=playwright_proxy, channel="chrome")  # type: ignore
+            browser = await chromium.launch(headless=headless, proxy=playwright_proxy, channel=config.BROWSER_CHANNEL)  # type: ignore
             browser_context = await browser.new_context(viewport={"width": 1920, "height": 1080}, user_agent=user_agent)
             return browser_context
 

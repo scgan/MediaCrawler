@@ -24,6 +24,7 @@ Or: python -m api.main
 import asyncio
 import os
 import subprocess
+import sys
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -92,9 +93,9 @@ async def health_check():
 async def check_environment():
     """Check if MediaCrawler environment is configured correctly"""
     try:
-        # Run uv run main.py --help command to check environment
+        # Use the current interpreter so runtime checks do not depend on uv cache state.
         process = await asyncio.create_subprocess_exec(
-            "uv", "run", "main.py", "--help",
+            sys.executable, "main.py", "--help",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd="."  # Project root directory
@@ -126,8 +127,8 @@ async def check_environment():
     except FileNotFoundError:
         return {
             "success": False,
-            "message": "uv command not found",
-            "error": "Please ensure uv is installed and configured in system PATH"
+            "message": "python command not found",
+            "error": "Please ensure the current Python interpreter is available"
         }
     except Exception as e:
         return {

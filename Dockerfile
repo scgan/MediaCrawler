@@ -2,6 +2,9 @@ FROM python:3.11-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/app/.venv/bin:${PATH}" \
+    UV_CACHE_DIR=/tmp/uv-cache \
+    UV_LINK_MODE=copy \
     DISPLAY=:99 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     MEDIACRAWLER_HEADLESS=false \
@@ -20,9 +23,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     git \
+    tini \
     nodejs \
     npm \
     xvfb \
+    x11-utils \
     fluxbox \
     x11vnc \
     novnc \
@@ -40,6 +45,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxfixes3 \
     libxrandr2 \
     libgbm1 \
+    libgl1 \
+    libglib2.0-0 \
+    libxshmfence1 \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
@@ -55,14 +63,18 @@ RUN uv sync --frozen || uv sync
 COPY . .
 
 # 安装 Playwright Chromium
-RUN uv run playwright install chromium
+RUN uv run playwright install --with-deps chromium
 
 # 准备目录
-RUN mkdir -p /app/browser_data /app/data && chmod -R 777 /app/browser_data /app/data
+RUN mkdir -p /app/browser_data /app/data /tmp/uv-cache && chmod -R 777 /app/browser_data /app/data /tmp/uv-cache
 
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 8080 6080 5900
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8080/api/health || exit 1
+
+ENTRYPOINT ["tini", "--"]
 CMD ["/entrypoint.sh"]
