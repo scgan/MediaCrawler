@@ -1,4 +1,3 @@
-# 明确锁定到 bookworm，别让 tag 漂到 trixie
 FROM python:3.11-bookworm
 WORKDIR /app
 
@@ -15,7 +14,7 @@ ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 ENV PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright/
 ENV PLAYWRIGHT_CDN_MIRROR=https://npmmirror.com/mirrors/playwright/
 
-# ===== 1) 换 APT 源（兼容传统 sources.list + 顺手处理 DEB822）=====
+# ===== 1) 换 APT 源 =====
 RUN set -eux; \
     FILES="$(find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) 2>/dev/null)"; \
     if [ -n "$FILES" ]; then \
@@ -23,26 +22,67 @@ RUN set -eux; \
         -e 's|deb\.debian\.org|mirrors.aliyun.com|g' \
         -e 's|security\.debian\.org|mirrors.aliyun.com|g' {} + 2>/dev/null || true; \
     fi; \
-    cat /etc/os-release; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        curl ca-certificates gnupg \
-        # playwright 运行时的硬依赖（chromium headless 常用）
-        libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
-        libcups2 libdrm2 libdbus-1-3 libxkbcommon0 \
-        libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-        libgbm1 libasound2 libpango-1.0-0 libcairo2 \
-        libatspi2.0-0 libwayland-client0 \
-        libx11-6 libxcb1 libx11-xcb1 libxext6 libxshmfence1 \
-        libglib2.0-0 libgtk-3-0 \
-        # 字体：保证 CJK/UI 渲染不炸
-        fonts-noto-cjk fonts-wqy-zenhei fonts-liberation \
-        # 构建/开发头文件（有些 py 包会编译）
-        build-essential python3-dev \
-        libxml2-dev libxslt1-dev zlib1g-dev \
-        libjpeg-dev libpng-dev libfreetype6-dev pkg-config \
-        # node/npm（如果你确实需要）
-        nodejs npm \
+        # 基础工具
+        curl ca-certificates gnupg wget \
+        # OpenCV 所需图形库
+        libgl1 \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+        libxrender-dev \
+        libgl1-mesa-glx \
+        libgomp1 \
+        # 图片处理库
+        libjpeg-dev \
+        libpng-dev \
+        libtiff-dev \
+        libopenexr-dev \
+        libgstreamer1.0-0 \
+        libgstreamer-plugins-base1.0-0 \
+        # Playwright 运行时依赖
+        libnss3 \
+        libnspr4 \
+        libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdrm2 \
+        libdbus-1-3 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libgbm1 \
+        libasound2 \
+        libpango-1.0-0 \
+        libcairo2 \
+        libatspi2.0-0 \
+        libwayland-client0 \
+        libx11-6 \
+        libxcb1 \
+        libx11-xcb1 \
+        libxshmfence1 \
+        libgtk-3-0 \
+        # 字体
+        fonts-noto-cjk \
+        fonts-wqy-zenhei \
+        fonts-liberation \
+        fonts-unifont \
+        fonts-dejavu-core \
+        fonts-freefont-ttf \
+        # 构建/开发头文件
+        build-essential \
+        python3-dev \
+        libxml2-dev \
+        libxslt1-dev \
+        zlib1g-dev \
+        libfreetype6-dev \
+        pkg-config \
+        # node/npm
+        nodejs \
+        npm \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -64,7 +104,7 @@ RUN if [ -f uv.lock ]; then \
         uv sync --python /usr/local/bin/python; \
     fi
 
-# ===== 6) Playwright（关键：只装浏览器二进制，不让它乱装 apt 包）=====
+# ===== 6) Playwright =====
 # 如果你的依赖里还没带 playwright，先确保装上
 RUN uv run --python /usr/local/bin/python pip install -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" playwright
 
@@ -73,7 +113,10 @@ RUN PLAYWRIGHT_DOWNLOAD_HOST="${PLAYWRIGHT_DOWNLOAD_HOST}" \
     PLAYWRIGHT_CDN_MIRROR="${PLAYWRIGHT_CDN_MIRROR}" \
     uv run --python /usr/local/bin/python playwright install chromium
 
-# ===== 7) 收尾 =====
+# ===== 7) 验证 OpenCV 安装 =====
+RUN uv run --python /usr/local/bin/python python -c "import cv2; print(f'OpenCV version: {cv2.__version__}')"
+
+# ===== 8) 收尾 =====
 COPY . .
 RUN mkdir -p /app/data /app/logs /app/cache /app/browser_data
 
