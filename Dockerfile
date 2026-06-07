@@ -1,4 +1,4 @@
-FROM python:3.11-bookworm
+FROM docker.1ms.run/library/python:3.11-bookworm
 
 WORKDIR /app
 
