@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  mediacrawler-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mediacrawler-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: Asia/Shanghai
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+      - ./browser_data:/app/browser_data
+      - ./config:/app/config
+    shm_size: "2gb"

@@ -26,6 +26,10 @@ from pathlib import Path
 
 from ..schemas import CrawlerStartRequest, LogEntry
 
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
 
 class CrawlerManager:
     """Crawler process manager"""
@@ -126,7 +130,8 @@ class CrawlerManager:
                     text=True,
                     encoding='utf-8',
                     bufsize=1,
-                    cwd=str(self._project_root),
+                    # cwd=str(self._project_root),
+                    cwd=str(PROJECT_ROOT),
                     env={**os.environ, "PYTHONUNBUFFERED": "1"}
                 )
 
@@ -201,6 +206,24 @@ class CrawlerManager:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "error_message": None
         }
+    
+    async def wait_until_finished(self, timeout: int = 300) -> bool:
+        """
+        Wait until crawler process finished.
+
+        :param timeout: max wait seconds
+        :return: True if process finished, False if timeout
+        """
+        waited = 0
+
+        while waited < timeout:
+            if not self.process or self.process.poll() is not None:
+                return True
+
+            await asyncio.sleep(1)
+            waited += 1
+
+        return False
 
     def _build_command(self, config: CrawlerStartRequest) -> list:
         """Build main.py command line arguments"""
