@@ -14,7 +14,6 @@ env
 
 data
 logs
-cache
 browser_data
 
 *.log
