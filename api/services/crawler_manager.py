@@ -251,8 +251,8 @@ class CrawlerManager:
         if config.cookies:
             cmd.extend(["--cookies", config.cookies])
 
-        # cmd.extend(["--headless", "true" if config.headless else "false"])
-        cmd.extend(["--headless", "true"])
+        cmd.extend(["--headless", "true" if config.headless else "false"])
+        # cmd.extend(["--headless", "true"])
 
         return cmd
 
