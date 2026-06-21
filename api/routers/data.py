@@ -30,6 +30,18 @@ router = APIRouter(prefix="/data", tags=["data"])
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
 
+def resolve_data_file_path(file_path: str) -> Path:
+    """Resolve a client-provided data file path and keep it inside DATA_DIR."""
+    full_path = (DATA_DIR / file_path).resolve()
+
+    try:
+        full_path.relative_to(DATA_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return full_path
+
+
 def get_file_info(file_path: Path) -> dict:
     """Get file information"""
     stat = file_path.stat()
@@ -212,6 +224,31 @@ async def download_file(file_path: str):
         filename=full_path.name,
         media_type="application/octet-stream"
     )
+
+
+@router.delete("/files/{file_path:path}")
+async def delete_file(file_path: str):
+    """Delete a file from the data directory"""
+    full_path = resolve_data_file_path(file_path)
+
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if not full_path.is_file():
+        raise HTTPException(status_code=400, detail="Not a file")
+
+    try:
+        full_path.unlink()
+    except PermissionError:
+        raise HTTPException(status_code=409, detail="File is in use")
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "status": "ok",
+        "message": "File deleted successfully",
+        "file": str(full_path.relative_to(DATA_DIR.resolve()))
+    }
 
 
 @router.get("/stats")

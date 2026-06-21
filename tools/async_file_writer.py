@@ -21,6 +21,8 @@ import csv
 import json
 import os
 import pathlib
+import re
+from datetime import datetime
 from typing import Dict, List
 import aiofiles
 import config
@@ -28,11 +30,37 @@ from tools.utils import utils
 from tools.words import AsyncWordCloudGenerator
 
 class AsyncFileWriter:
+    _run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    _max_keyword_length = 80
+
     def __init__(self, platform: str, crawler_type: str):
         self.lock = asyncio.Lock()
         self.platform = platform
         self.crawler_type = crawler_type
         self.wordcloud_generator = AsyncWordCloudGenerator() if config.ENABLE_GET_WORDCLOUD else None
+
+    @classmethod
+    def _sanitize_filename_part(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            return ""
+
+        value = re.sub(r"[,，]+", "_", value)
+        value = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", value)
+        value = re.sub(r"\s+", "_", value)
+        value = re.sub(r"_+", "_", value)
+        value = value.strip("._ ")
+        return value[:cls._max_keyword_length]
+
+    def _get_keyword_suffix(self) -> str:
+        if self.crawler_type != "search":
+            return ""
+
+        keyword_part = self._sanitize_filename_part(config.KEYWORDS)
+        if not keyword_part:
+            return ""
+
+        return f"_{keyword_part}"
 
     def _get_file_path(self, file_type: str, item_type: str) -> str:
         if config.SAVE_DATA_PATH:
@@ -40,7 +68,7 @@ class AsyncFileWriter:
         else:
             base_path = f"data/{self.platform}/{file_type}"
         pathlib.Path(base_path).mkdir(parents=True, exist_ok=True)
-        file_name = f"{self.crawler_type}_{item_type}_{utils.get_current_date()}.{file_type}"
+        file_name = f"{self.crawler_type}_{item_type}{self._get_keyword_suffix()}_{self._run_timestamp}.{file_type}"
         return f"{base_path}/{file_name}"
 
     async def write_to_csv(self, item: Dict, item_type: str):
