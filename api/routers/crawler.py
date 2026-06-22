@@ -127,72 +127,72 @@ async def get_logs(limit: int = 100):
     logs = crawler_manager.logs[-limit:] if limit > 0 else crawler_manager.logs
     return {"logs": [log.model_dump() for log in logs]}
 
-@router.post("/run-and-read")
-async def run_and_read(request: RunAndReadRequest):
-    """
-    Start crawler, wait for completion, then return latest result file as JSON.
+# @router.post("/run-and-read")
+# async def run_and_read(request: RunAndReadRequest):
+#     """
+#     Start crawler, wait for completion, then return latest result file as JSON.
 
-    This endpoint is suitable for small crawling tasks only.
-    For long tasks, use:
-    1. POST /api/crawler/start
-    2. GET /api/crawler/status
-    3. GET /api/data/files
-    4. GET /api/data/files/{file_path}
-    """
+#     This endpoint is suitable for small crawling tasks only.
+#     For long tasks, use:
+#     1. POST /api/crawler/start
+#     2. GET /api/crawler/status
+#     3. GET /api/data/files
+#     4. GET /api/data/files/{file_path}
+#     """
 
-    # 强制使用 jsonl，方便接口读取
-    request.save_option = request.save_option.JSONL
+#     # 强制使用 jsonl，方便接口读取
+#     request.save_option = request.save_option.JSONL
 
-    success = await crawler_manager.start(request)
+#     success = await crawler_manager.start(request)
 
-    if not success:
-        if crawler_manager.process and crawler_manager.process.poll() is None:
-            raise HTTPException(status_code=400, detail="Crawler is already running")
-        raise HTTPException(status_code=500, detail="Failed to start crawler")
+#     if not success:
+#         if crawler_manager.process and crawler_manager.process.poll() is None:
+#             raise HTTPException(status_code=400, detail="Crawler is already running")
+#         raise HTTPException(status_code=500, detail="Failed to start crawler")
 
-    finished = await crawler_manager.wait_until_finished(timeout=request.timeout)
+#     finished = await crawler_manager.wait_until_finished(timeout=request.timeout)
 
-    if not finished:
-        await crawler_manager.stop()
-        raise HTTPException(status_code=504, detail="Crawler timeout")
+#     if not finished:
+#         await crawler_manager.stop()
+#         raise HTTPException(status_code=504, detail="Crawler timeout")
 
-    latest_file = find_latest_result_file(platform=request.platform.value)
+#     latest_file = find_latest_result_file(platform=request.platform.value)
 
-    if not latest_file:
-        return {
-            "status": "ok",
-            "message": "Crawler finished, but no result file found",
-            "data": [],
-            "total": 0
-        }
+#     if not latest_file:
+#         return {
+#             "status": "ok",
+#             "message": "Crawler finished, but no result file found",
+#             "data": [],
+#             "total": 0
+#         }
 
-    if latest_file.suffix == ".jsonl":
-        result = read_jsonl_file(latest_file, limit=request.limit)
-        return {
-            "status": "ok",
-            "message": "Crawler finished successfully",
-            **result
-        }
+#     if latest_file.suffix == ".jsonl":
+#         result = read_jsonl_file(latest_file, limit=request.limit)
+#         return {
+#             "status": "ok",
+#             "message": "Crawler finished successfully",
+#             **result
+#         }
 
-    if latest_file.suffix == ".json":
-        with open(latest_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+#     if latest_file.suffix == ".json":
+#         with open(latest_file, "r", encoding="utf-8") as f:
+#             data = json.load(f)
 
-        if isinstance(data, list):
-            return {
-                "status": "ok",
-                "message": "Crawler finished successfully",
-                "file": str(latest_file.relative_to(DATA_DIR)),
-                "data": data[:request.limit],
-                "total": len(data)
-            }
+#         if isinstance(data, list):
+#             return {
+#                 "status": "ok",
+#                 "message": "Crawler finished successfully",
+#                 "file": str(latest_file.relative_to(DATA_DIR)),
+#                 "data": data[:request.limit],
+#                 "total": len(data)
+#             }
 
-        return {
-            "status": "ok",
-            "message": "Crawler finished successfully",
-            "file": str(latest_file.relative_to(DATA_DIR)),
-            "data": data,
-            "total": 1
-        }
+#         return {
+#             "status": "ok",
+#             "message": "Crawler finished successfully",
+#             "file": str(latest_file.relative_to(DATA_DIR)),
+#             "data": data,
+#             "total": 1
+#         }
 
-    raise HTTPException(status_code=400, detail="Unsupported result file type")
+#     raise HTTPException(status_code=400, detail="Unsupported result file type")
