@@ -70,8 +70,29 @@ class BilibiliClient(AbstractApiClient, ProxyRefreshMixin):
         # Check if proxy has expired before each request
         await self._refresh_proxy_if_expired()
 
-        async with make_async_client(proxy=self.proxy) as client:
-            response = await client.request(method, url, timeout=self.timeout, **kwargs)
+        max_retries = max(1, getattr(config, "BILI_REQUEST_RETRY_TIMES", 3))
+        base_delay = max(0, getattr(config, "BILI_REQUEST_RETRY_BASE_DELAY", 2))
+        response = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                async with make_async_client(proxy=self.proxy) as client:
+                    response = await client.request(method, url, timeout=self.timeout, **kwargs)
+                break
+            except httpx.HTTPError as exc:
+                if attempt >= max_retries:
+                    raise DataFetchError(
+                        f"{exc.__class__.__name__} while requesting {method}:{url}: {exc}"
+                    ) from exc
+                delay = base_delay * attempt + random.uniform(0, 1)
+                utils.logger.warning(
+                    f"[BilibiliClient.request] {exc.__class__.__name__} while requesting "
+                    f"{method}:{url}, retry {attempt}/{max_retries} in {delay:.2f}s: {exc}"
+                )
+                await asyncio.sleep(delay)
+
+        if response is None:
+            raise DataFetchError(f"No response returned for {method}:{url}")
+
         try:
             data: Dict = response.json()
         except json.JSONDecodeError:

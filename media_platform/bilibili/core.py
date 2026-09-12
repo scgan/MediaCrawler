@@ -202,14 +202,20 @@ class BilibiliCrawler(AbstractCrawler):
 
                 utils.logger.info(f"[BilibiliCrawler.search_by_keywords] search bilibili keyword: {keyword}, page: {page}")
                 video_id_list: List[str] = []
-                videos_res = await self.bili_client.search_video_by_keyword(
-                    keyword=keyword,
-                    page=page,
-                    page_size=bili_limit_count,
-                    order=SearchOrderType.DEFAULT,
-                    pubtime_begin_s=0,  # Publish date start timestamp
-                    pubtime_end_s=0,  # Publish date end timestamp
-                )
+                try:
+                    videos_res = await self.bili_client.search_video_by_keyword(
+                        keyword=keyword,
+                        page=page,
+                        page_size=bili_limit_count,
+                        order=SearchOrderType.DEFAULT,
+                        pubtime_begin_s=0,  # Publish date start timestamp
+                        pubtime_end_s=0,  # Publish date end timestamp
+                    )
+                except DataFetchError as ex:
+                    utils.logger.error(
+                        f"[BilibiliCrawler.search_by_keywords] Search failed for keyword: {keyword}, page: {page}, err: {ex}"
+                    )
+                    break
                 video_list: List[Dict] = videos_res.get("result")
 
                 if not video_list:
@@ -438,6 +444,11 @@ class BilibiliCrawler(AbstractCrawler):
                 return None
             except KeyError as ex:
                 utils.logger.error(f"[BilibiliCrawler.get_video_info_task] have not fund note detail video_id:{bvid}, err: {ex}")
+                return None
+            except Exception as ex:
+                utils.logger.error(
+                    f"[BilibiliCrawler.get_video_info_task] Unexpected error for video_id:{bvid or aid}, err: {ex}"
+                )
                 return None
 
     async def get_video_play_url_task(self, aid: int, cid: int, semaphore: asyncio.Semaphore) -> Union[Dict, None]:
