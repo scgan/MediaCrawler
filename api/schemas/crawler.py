@@ -66,6 +66,7 @@ class CrawlerStartRequest(BaseModel):
     specified_ids: str = ""  # Post/video ID list for detail mode, comma-separated
     creator_ids: str = ""  # Creator ID list for creator mode, comma-separated
     start_page: int = 1
+    max_notes_count: Optional[int] = None  # Max notes/articles to crawl (None = config default)
     enable_comments: bool = True
     enable_sub_comments: bool = False
     save_option: SaveDataOptionEnum = SaveDataOptionEnum.JSONL
