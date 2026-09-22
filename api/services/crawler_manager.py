@@ -27,6 +27,8 @@ from pathlib import Path
 
 from ..schemas import CrawlerStartRequest, LogEntry
 
+import config as project_config
+
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -48,6 +50,7 @@ class CrawlerManager:
         self._project_root = Path(__file__).parent.parent.parent
         # Log queue - for pushing to WebSocket
         self._log_queue: Optional[asyncio.Queue] = None
+        self.error_message: Optional[str] = None
 
     @property
     def logs(self) -> List[LogEntry]:
@@ -144,6 +147,7 @@ class CrawlerManager:
                 self.status = "running"
                 self.started_at = datetime.now()
                 self.current_config = config
+                self.error_message = None
 
                 entry = self._create_log_entry(
                     f"Crawler started on platform: {config.platform.value}, type: {config.crawler_type.value}",
@@ -216,7 +220,7 @@ class CrawlerManager:
             "platform": self.current_config.platform.value if self.current_config else None,
             "crawler_type": self.current_config.crawler_type.value if self.current_config else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
-            "error_message": None
+            "error_message": self.error_message
         }
     
     async def wait_until_finished(self, timeout: int = 300) -> bool:
@@ -311,12 +315,33 @@ class CrawlerManager:
             # Process ended
             if self.status == "running":
                 exit_code = self.process.returncode if self.process else -1
-                if exit_code == 0:
+                login_failed_code = getattr(project_config, "LOGIN_FAILED_EXIT_CODE", 2)
+                if exit_code == login_failed_code:
+                    # 登录失败（如无头模式下无法扫码）专用退出码。
+                    # 必须明确标记为 error：否则调用方会看到 status=idle 误判为成功，
+                    # 最终拿到 0 条数据却没有任何报错（静默失败）。
+                    self.status = "error"
+                    self.error_message = (
+                        "登录失败：浏览器未能在超时前完成登录。"
+                        "若运行在无头模式（headless=true），二维码无法展示，请改用以下方式之一："
+                        "1) 先用有头模式人工扫码登录一次，复用 browser_data 中保存的登录态；"
+                        "2) 使用 cookie 登录（传 cookies 且 login_type=cookie）。"
+                    )
+                    entry = self._create_log_entry(
+                        f"[登录失败] 进程以退出码 {exit_code} 结束，未采集到任何数据。"
+                        f"当前 headless={'true' if getattr(self.current_config, 'headless', False) else 'false'}，"
+                        f"浏览器{'无法显示二维码' if getattr(self.current_config, 'headless', False) else '已显示二维码'}。",
+                        "error",
+                    )
+                    await self._push_log(entry)
+                elif exit_code == 0:
                     entry = self._create_log_entry("Crawler completed successfully", "success")
+                    await self._push_log(entry)
+                    self.status = "idle"
                 else:
                     entry = self._create_log_entry(f"Crawler exited with code: {exit_code}", "warning")
-                await self._push_log(entry)
-                self.status = "idle"
+                    await self._push_log(entry)
+                    self.status = "idle"
 
         except asyncio.CancelledError:
             pass

@@ -321,11 +321,13 @@ class CDPBrowserManager:
                 # dialog to the user. Use ws:// with a longer timeout to wait for user confirmation.
                 ws_url = f"ws://localhost:{self.debug_port}/devtools/browser"
                 utils.logger.info(f"[CDPBrowserManager] Connecting to existing browser via CDP: {ws_url}")
+                confirm_timeout = config.CDP_USER_CONFIRM_TIMEOUT_SECONDS
                 utils.logger.info(
-                    "[CDPBrowserManager] Please check your browser for a confirmation dialog and accept it"
+                    f"[CDPBrowserManager] Please check your browser for a confirmation dialog and accept it "
+                    f"(waiting up to {confirm_timeout}s)"
                 )
                 self.browser = await playwright.chromium.connect_over_cdp(
-                    ws_url, timeout=config.BROWSER_LAUNCH_TIMEOUT * 1000
+                    ws_url, timeout=confirm_timeout * 1000
                 )
             else:
                 # For launched browser, get WebSocket URL first

@@ -94,6 +94,24 @@ BROWSER_LAUNCH_TIMEOUT = _env_int("MEDIACRAWLER_BROWSER_LAUNCH_TIMEOUT", 60)
 # Browser channel for Playwright. Leave empty to use Playwright's bundled Chromium.
 BROWSER_CHANNEL = os.getenv("MEDIACRAWLER_BROWSER_CHANNEL", "").strip() or None
 
+# ==================== 登录等待时长 ====================
+# 扫码登录 / 验证码登录的最大等待窗口（秒）。
+# 各平台 login.py 的 check_login_state 会按 LOGIN_RETRY_INTERVAL_SECONDS 轮询，
+# 超过该窗口仍未登录成功则判定失败并退出。
+# 改大这个值即可延长"等你扫码"的时间，适合网络慢、需要手动过滑块/验证码的场景。
+LOGIN_WAIT_TIMEOUT_SECONDS = _env_int("MEDIACRAWLER_LOGIN_WAIT_TIMEOUT", 900)
+
+# 登录状态轮询间隔（秒）。调小更灵敏但请求更频繁，一般保持 1 即可。
+LOGIN_RETRY_INTERVAL_SECONDS = _env_int("MEDIACRAWLER_LOGIN_RETRY_INTERVAL", 1)
+
+# 登录成功后的页面重定向等待（秒）。
+# 网络慢或平台跳转慢时可适当调大，避免 cookie 还没落盘就继续爬取导致鉴权失败。
+LOGIN_REDIRECT_WAIT_SECONDS = _env_int("MEDIACRAWLER_LOGIN_REDIRECT_WAIT", 5)
+
+# CDP 模式下等待用户在 Chrome 里点击「接受」确认调试连接的时长（秒）。
+# 独立于 BROWSER_LAUNCH_TIMEOUT，避免为了等确认而整体拖慢浏览器启动判定。
+CDP_USER_CONFIRM_TIMEOUT_SECONDS = _env_int("MEDIACRAWLER_CDP_CONFIRM_TIMEOUT", 180)
+
 # 是否连接用户已打开的浏览器，而不是启动新的浏览器
 # 开启后，程序会连接一个已经启用了远程调试的浏览器
 # 用户需要在 Chrome 中开启远程调试：chrome://inspect/#remote-debugging
