@@ -465,7 +465,7 @@ class TieBaCrawler(AbstractCrawler):
 
             if not tieba_link:
                 utils.logger.warning("[TieBaCrawler] Tieba link not found, directly accessing Tieba homepage")
-                await self.context_page.goto(self.index_url, wait_until="domcontentloaded")
+                await self.context_page.goto(self.index_url, wait_until=config.PAGE_WAIT_UNTIL)
                 return
 
             # Step 4: Click Tieba link (check if it will open in a new tab)
@@ -508,7 +508,7 @@ class TieBaCrawler(AbstractCrawler):
         except Exception as e:
             utils.logger.error(f"[TieBaCrawler] Failed to access Tieba via Baidu homepage: {e}")
             utils.logger.info("[TieBaCrawler] Fallback: directly accessing Tieba homepage")
-            await self.context_page.goto(self.index_url, wait_until="domcontentloaded")
+            await self.context_page.goto(self.index_url, wait_until=config.PAGE_WAIT_UNTIL)
 
     async def _inject_anti_detection_scripts(self):
         """
@@ -653,12 +653,14 @@ class TieBaCrawler(AbstractCrawler):
                 user_agent=user_agent,
                 channel=config.BROWSER_CHANNEL,
             )
+            utils.set_default_navigation_timeout(browser_context)
             return browser_context
         else:
             browser = await chromium.launch(headless=headless, proxy=playwright_proxy, channel=config.BROWSER_CHANNEL)  # type: ignore
             browser_context = await browser.new_context(
                 viewport={"width": 1920, "height": 1080}, user_agent=user_agent
             )
+            utils.set_default_navigation_timeout(browser_context)
             return browser_context
 
     async def launch_browser_with_cdp(

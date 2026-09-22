@@ -94,7 +94,7 @@ class BilibiliCrawler(AbstractCrawler):
                 await self.browser_context.add_init_script(path="libs/stealth.min.js")
 
             self.context_page = await self.browser_context.new_page()
-            await self.context_page.goto(self.index_url)
+            await self.context_page.goto(self.index_url, wait_until=config.PAGE_WAIT_UNTIL)
 
             # Create a client to interact with the xiaohongshu website.
             self.bili_client = await self.create_bilibili_client(httpx_proxy_format)
@@ -603,11 +603,13 @@ class BilibiliCrawler(AbstractCrawler):
                 user_agent=user_agent,
                 channel=config.BROWSER_CHANNEL,
             )
+            utils.set_default_navigation_timeout(browser_context)
             return browser_context
         else:
             # type: ignore
             browser = await chromium.launch(headless=headless, proxy=playwright_proxy, channel=config.BROWSER_CHANNEL)
             browser_context = await browser.new_context(viewport={"width": 1920, "height": 1080}, user_agent=user_agent)
+            utils.set_default_navigation_timeout(browser_context)
             return browser_context
 
     async def launch_browser_with_cdp(

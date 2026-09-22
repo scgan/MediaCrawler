@@ -85,7 +85,9 @@ class WeiboLogin(AbstractLogin):
     async def login_by_qrcode(self):
         """login weibo website and keep webdriver login state"""
         utils.logger.info("[WeiboLogin.login_by_qrcode] Begin login weibo by qrcode ...")
-        await self.context_page.goto(self.weibo_sso_login_url)
+        # 登录页检测到登录态时会立即重定向，原导航被打断会抛 net::ERR_ABORTED；
+        # 此时页面实际已可用，用 safe_goto 容错，避免误判为登录失败。
+        await utils.safe_goto(self.context_page, self.weibo_sso_login_url)
         # find login qrcode
         qrcode_img_selector = "xpath=//img[@class='w-full h-full']"
         base64_qrcode_img = await utils.find_login_qrcode(
@@ -94,7 +96,7 @@ class WeiboLogin(AbstractLogin):
         )
         if not base64_qrcode_img:
             utils.logger.info("[WeiboLogin.login_by_qrcode] login failed , have not found qrcode please check ....")
-            sys.exit()
+            sys.exit(config.LOGIN_FAILED_EXIT_CODE)
 
         # show login qrcode
         partial_show_qrcode = functools.partial(utils.show_qrcode, base64_qrcode_img)
@@ -111,7 +113,7 @@ class WeiboLogin(AbstractLogin):
             await self.check_login_state(no_logged_in_session)
         except RetryError:
             utils.logger.info("[WeiboLogin.login_by_qrcode] Login weibo failed by qrcode login method ...")
-            sys.exit()
+            sys.exit(config.LOGIN_FAILED_EXIT_CODE)
 
         wait_redirect_seconds = config.LOGIN_REDIRECT_WAIT_SECONDS
         utils.logger.info(

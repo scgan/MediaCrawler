@@ -108,9 +108,31 @@ LOGIN_RETRY_INTERVAL_SECONDS = _env_int("MEDIACRAWLER_LOGIN_RETRY_INTERVAL", 1)
 # 网络慢或平台跳转慢时可适当调大，避免 cookie 还没落盘就继续爬取导致鉴权失败。
 LOGIN_REDIRECT_WAIT_SECONDS = _env_int("MEDIACRAWLER_LOGIN_REDIRECT_WAIT", 5)
 
+# 登录失败时的进程退出码。
+# 各平台 login.py 登录超时后原本调用 sys.exit()（退出码 0），导致 API 层误判为
+# "Crawler completed successfully"，调用方看到成功但实际 0 条数据（静默失败）。
+# 设为非 0 后，API 层会把状态标记为 error 并给出明确错误信息。
+LOGIN_FAILED_EXIT_CODE = _env_int("MEDIACRAWLER_LOGIN_FAILED_EXIT_CODE", 2)
+
 # CDP 模式下等待用户在 Chrome 里点击「接受」确认调试连接的时长（秒）。
 # 独立于 BROWSER_LAUNCH_TIMEOUT，避免为了等确认而整体拖慢浏览器启动判定。
 CDP_USER_CONFIRM_TIMEOUT_SECONDS = _env_int("MEDIACRAWLER_CDP_CONFIRM_TIMEOUT", 180)
+
+# ==================== 页面导航超时 ====================
+# Playwright 默认导航超时是 30 秒，且默认等 load 事件（需等所有图片/视频/脚本加载完）。
+# 快手、抖音等重资源首页在容器或弱网环境下常因此超时失败：
+#   playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+# 调大超时 + 改用 domcontentloaded（只等 DOM 解析完成）可解决绝大多数此类问题。
+#
+# 导航超时（秒）。
+PAGE_NAVIGATION_TIMEOUT = _env_int("MEDIACRAWLER_PAGE_NAVIGATION_TIMEOUT", 60)
+
+# 导航等待策略：domcontentloaded | load | networkidle
+# domcontentloaded 不等图片/视频等子资源，比重资源首页用 load 更稳。
+PAGE_WAIT_UNTIL = (
+    os.getenv("MEDIACRAWLER_PAGE_WAIT_UNTIL", "domcontentloaded").strip()
+    or "domcontentloaded"
+)
 
 # 是否连接用户已打开的浏览器，而不是启动新的浏览器
 # 开启后，程序会连接一个已经启用了远程调试的浏览器

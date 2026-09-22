@@ -96,7 +96,7 @@ class DouYinCrawler(AbstractCrawler):
                 await self.browser_context.add_init_script(path="libs/stealth.min.js")
 
             self.context_page = await self.browser_context.new_page()
-            await self.context_page.goto(self.index_url)
+            await self.context_page.goto(self.index_url, wait_until=config.PAGE_WAIT_UNTIL)
 
             self.dy_client = await self.create_douyin_client(httpx_proxy_format)
             if not await self.dy_client.pong(browser_context=self.browser_context):
@@ -374,10 +374,12 @@ class DouYinCrawler(AbstractCrawler):
                 },
                 user_agent=user_agent,
             )  # type: ignore
+            utils.set_default_navigation_timeout(browser_context)
             return browser_context
         else:
             browser = await chromium.launch(headless=headless, proxy=playwright_proxy)  # type: ignore
             browser_context = await browser.new_context(viewport={"width": 1920, "height": 1080}, user_agent=user_agent)
+            utils.set_default_navigation_timeout(browser_context)
             return browser_context
 
     async def launch_browser_with_cdp(

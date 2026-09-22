@@ -95,7 +95,7 @@ class WeiboCrawler(AbstractCrawler):
 
 
             self.context_page = await self.browser_context.new_page()
-            await self.context_page.goto(self.index_url)
+            await self.context_page.goto(self.index_url, wait_until=config.PAGE_WAIT_UNTIL)
             await asyncio.sleep(2)
 
 
@@ -113,7 +113,7 @@ class WeiboCrawler(AbstractCrawler):
 
                 # After successful login, redirect to mobile website and update mobile cookies
                 utils.logger.info("[WeiboCrawler.start] redirect weibo mobile homepage and update cookies on mobile platform")
-                await self.context_page.goto(self.mobile_index_url)
+                await self.context_page.goto(self.mobile_index_url, wait_until=config.PAGE_WAIT_UNTIL)
                 await asyncio.sleep(3)
                 # Only get mobile cookies to avoid confusion between PC and mobile cookies
                 await self.wb_client.update_cookies(
@@ -405,10 +405,12 @@ class WeiboCrawler(AbstractCrawler):
                 user_agent=user_agent,
                 channel=config.BROWSER_CHANNEL,
             )
+            utils.set_default_navigation_timeout(browser_context)
             return browser_context
         else:
             browser = await chromium.launch(headless=headless, proxy=playwright_proxy, channel=config.BROWSER_CHANNEL)  # type: ignore
             browser_context = await browser.new_context(viewport={"width": 1920, "height": 1080}, user_agent=user_agent)
+            utils.set_default_navigation_timeout(browser_context)
             return browser_context
 
     async def launch_browser_with_cdp(

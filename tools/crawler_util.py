@@ -23,6 +23,7 @@
 # @Time    : 2023/12/2 12:53
 # @Desc    : Crawler utility functions
 
+import asyncio
 import base64
 import json
 import random
@@ -231,3 +232,74 @@ def extract_url_params_to_dict(url: str) -> Dict:
     parsed_url = urllib.parse.urlparse(url)
     url_params_dict = dict(urllib.parse.parse_qsl(parsed_url.query))
     return url_params_dict
+
+
+def set_default_navigation_timeout(browser_context) -> None:
+    """
+    统一设置浏览器上下文的导航超时（毫秒）。
+
+    Playwright 默认导航超时仅 30 秒，且默认等待 load 事件（需等所有图片/视频/脚本
+    加载完成）。快手 / 抖音等重资源首页在容器或弱网环境下经常触发：
+        playwright TimeoutError: Page.goto: Timeout 30000ms exceeded.
+    这里按 config.PAGE_NAVIGATION_TIMEOUT 统一放宽；在 context 级设置一次，
+    即可覆盖该 context 下所有页面的 goto，无需逐个调用点修改。
+    """
+    import config  # 延迟导入，避免模块加载期的循环依赖
+
+    try:
+        timeout_ms = max(1, int(config.PAGE_NAVIGATION_TIMEOUT)) * 1000
+    except (TypeError, ValueError):
+        timeout_ms = 60000
+    browser_context.set_default_navigation_timeout(timeout_ms)
+    browser_context.set_default_timeout(timeout_ms)
+
+
+async def safe_goto(page, url, wait_until=None, timeout_ms=None, retries=2) -> bool:
+    """
+    导航到指定 URL，容忍 ERR_ABORTED 这类「导航被中断但页面实际已可用」的错误。
+
+    背景：登录页（如微博 passport.weibo.com/sso/signin）在检测到已有登录态时
+    会立即重定向，原导航被新导航打断，Playwright 抛出：
+        playwright._impl._errors.Error: Page.goto: net::ERR_ABORTED
+    此时页面其实已到达目标，直接抛异常会误判为失败。
+    注意这与 TimeoutError 性质不同：超时是「等太久」，调大超时有效；
+    ERR_ABORTED 是「被打断」，加超时无效，需要容错处理。
+
+    :param page: Playwright Page 对象
+    :param url: 目标 URL
+    :param wait_until: 等待策略，默认取 config.PAGE_WAIT_UNTIL
+    :param timeout_ms: 导航超时（毫秒），默认取 config.PAGE_NAVIGATION_TIMEOUT
+    :param retries: ERR_ABORTED 时页面不可用情况下的重试次数
+    :return: 导航是否成功（ERR_ABORTED 但页面可用时返回 True）
+    """
+    import config  # 延迟导入，避免模块加载期循环依赖
+
+    if wait_until is None:
+        wait_until = getattr(config, "PAGE_WAIT_UNTIL", "domcontentloaded")
+    if timeout_ms is None:
+        timeout_ms = max(1, int(getattr(config, "PAGE_NAVIGATION_TIMEOUT", 60))) * 1000
+
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            await page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+            return True
+        except Exception as exc:  # noqa: BLE001 - 需要按消息区分可恢复错误
+            last_error = exc
+            message = str(exc) or ""
+            exc_msg = getattr(exc, "message", "") or ""
+            combined = f"{message} {exc_msg}"
+
+            # 仅对「导航被中断」做容错：确认页面仍可用即视为成功
+            if "ERR_ABORTED" in combined:
+                try:
+                    if not page.is_closed() and page.url:
+                        return True
+                except Exception:
+                    pass
+                if attempt < retries:
+                    await asyncio.sleep(1)
+                    continue
+            # 其余错误（含 TimeoutError）原样抛出，避免掩盖真实问题
+            raise
+    raise last_error

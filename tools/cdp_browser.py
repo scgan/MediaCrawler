@@ -385,6 +385,7 @@ class CDPBrowserManager:
             browser_context = await self.browser.new_context(**context_options)
             utils.logger.info("[CDPBrowserManager] Created new browser context")
 
+        utils.set_default_navigation_timeout(browser_context)
         return browser_context
 
     async def add_stealth_script(self, script_path: str = "libs/stealth.min.js"):
