@@ -306,7 +306,22 @@ def get_time_range_filter(force_rebuild: bool = False) -> TimeRangeFilter:
             parse_user_time(start_raw, is_end=False),
             parse_user_time(end_raw, is_end=True),
         )
-        if new_filter.enabled:
+        # 退化窗口保护：start == end 会形成零宽度区间（左闭右闭、宽度 1 秒），
+        # 实际会把几乎所有数据过滤掉。调用方（如 zhengwu_analysis）在创建任务时
+        # 常把 start_time/end_time 都写成同一个 now 表示「不限制」，这里必须识别并放行。
+        # 注意：纯日期（"2026-09-22"）会被补齐成 [00:00:00, 23:59:59]，不会相等，不受影响。
+        if (
+            new_filter.start_ts is not None
+            and new_filter.end_ts is not None
+            and new_filter.start_ts >= new_filter.end_ts
+        ):
+            logger.warning(
+                f"[tools.time_filter] 检测到退化时间窗口: {start_raw!r} ~ {end_raw!r}"
+                f"（解析为 {new_filter.describe()}），宽度为零，已视为「不限制」。"
+                f"若确实需要过滤，请让结束时间晚于起始时间。"
+            )
+            new_filter = TimeRangeFilter(None, None)
+        elif new_filter.enabled:
             logger.info(f"[tools.time_filter] 已启用时间范围过滤: {new_filter.describe()}")
 
     _filter_cache = new_filter

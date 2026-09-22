@@ -269,6 +269,14 @@ class CrawlerManager:
         cmd.extend(["--headless", "true" if config.headless else "false"])
         # cmd.extend(["--headless", "true"])
 
+        # 按发布时间区间过滤（任一为空即不限制该侧）
+        if getattr(config, "start_time", None):
+            cmd.extend(["--start_time", config.start_time])
+        if getattr(config, "end_time", None):
+            cmd.extend(["--end_time", config.end_time])
+        if getattr(config, "time_filter_action", None):
+            cmd.extend(["--time_filter_action", config.time_filter_action])
+
         return cmd
 
     async def _read_output(self):

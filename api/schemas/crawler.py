@@ -73,6 +73,14 @@ class CrawlerStartRequest(BaseModel):
     cookies: str = ""
     headless: bool = False
 
+    # ---- 按发布时间区间过滤（与 main.py 的 --start_time / --end_time 对应）----
+    # 支持 "YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM:SS"，留空表示该侧不限制。
+    # 只给日期时：起始补到当天 00:00:00，结束补到当天 23:59:59（闭区间）。
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    # 区间外数据的处理策略：skip=丢弃并继续翻页补足 | stop=丢弃并终止翻页 | keep=仍然保存
+    time_filter_action: Optional[str] = None
+
 
 class CrawlerStatusResponse(BaseModel):
     """Crawler status response"""
