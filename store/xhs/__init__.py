@@ -24,7 +24,7 @@
 from typing import List
 
 import config
-from tools.time_filter import match_item
+from tools.time_filter import is_content_dropped, mark_content_dropped, match_item
 from var import source_keyword_var
 
 from .xhs_store_media import *
@@ -95,6 +95,8 @@ async def update_xhs_note(note_item: Dict):
 
     """
     if not match_item(note_item, platform="xhs", kind="content"):
+        # 登记被丢弃的内容，避免其评论成为孤儿评论
+        mark_content_dropped(note_item.get("note_id"))
         return
     note_id = note_item.get("note_id")
     user_info = note_item.get("user", {})
@@ -152,6 +154,9 @@ async def batch_update_xhs_note_comments(note_id: str, comments: List[Dict]):
 
 
 async def update_xhs_note_comment(note_id: str, comment_item: Dict):
+    if is_content_dropped(note_id):
+        # 所属内容已被时间过滤丢弃，评论不再落库，避免出现孤儿评论
+        return
     """
     Update Xiaohongshu note comment
     Args:
@@ -236,6 +241,8 @@ async def save_creator(user_id: str, creator: Dict):
 
 
 async def update_xhs_note_image(note_id, pic_content, extension_file_name):
+    if is_content_dropped(note_id):
+        return
     """
     Update Xiaohongshu note image
     Args:
@@ -251,6 +258,8 @@ async def update_xhs_note_image(note_id, pic_content, extension_file_name):
 
 
 async def update_xhs_note_video(note_id, video_content, extension_file_name):
+    if is_content_dropped(note_id):
+        return
     """
     Update Xiaohongshu note video
     Args:

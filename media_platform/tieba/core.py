@@ -38,7 +38,7 @@ from proxy.proxy_ip_pool import IpInfoModel, ProxyIpPool, create_ip_pool
 from store import tieba as tieba_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
-from tools.time_filter import STOP, SKIP, SearchTimeGuard
+from tools.time_filter import STOP, SKIP, SearchTimeGuard, match_item
 from var import crawler_type_var, source_keyword_var
 
 from .client import BaiduTieBaClient
@@ -283,9 +283,13 @@ class TieBaCrawler(AbstractCrawler):
         note_details = await asyncio.gather(*task_list)
         note_details_model: List[TiebaNote] = []
         for note_detail in note_details:
-            if note_detail is not None:
-                note_details_model.append(note_detail)
-                await tieba_store.update_tieba_note(note_detail)
+            if note_detail is None:
+                continue
+            # 内容未通过时间过滤时跳过，避免抓评论产生孤儿评论
+            if not match_item(note_detail, platform="tieba", kind="content"):
+                continue
+            note_details_model.append(note_detail)
+            await tieba_store.update_tieba_note(note_detail)
         await self.batch_get_note_comments(note_details_model)
 
     async def get_note_detail_async_task(

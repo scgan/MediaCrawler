@@ -39,7 +39,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import xhs as xhs_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
-from tools.time_filter import STOP, SKIP, SearchTimeGuard
+from tools.time_filter import STOP, SKIP, SearchTimeGuard, match_item
 from var import crawler_type_var, source_keyword_var
 
 from .client import XiaoHongShuClient
@@ -258,9 +258,12 @@ class XiaoHongShuCrawler(AbstractCrawler):
 
         note_details = await asyncio.gather(*task_list)
         for note_detail in note_details:
-            if note_detail:
-                await xhs_store.update_xhs_note(note_detail)
-                await self.get_notice_media(note_detail)
+            if not note_detail:
+                continue
+            if not match_item(note_detail, platform="xhs", kind="content"):
+                continue
+            await xhs_store.update_xhs_note(note_detail)
+            await self.get_notice_media(note_detail)
 
     async def get_specified_notes(self):
         """Get the information and comments of the specified post
@@ -283,11 +286,15 @@ class XiaoHongShuCrawler(AbstractCrawler):
         xsec_tokens = []
         note_details = await asyncio.gather(*get_note_detail_task_list)
         for note_detail in note_details:
-            if note_detail:
-                need_get_comment_note_ids.append(note_detail.get("note_id", ""))
-                xsec_tokens.append(note_detail.get("xsec_token", ""))
-                await xhs_store.update_xhs_note(note_detail)
-                await self.get_notice_media(note_detail)
+            if not note_detail:
+                continue
+            # 内容未通过时间过滤时，不再抓评论与媒体，避免产生孤儿评论 / 孤儿媒体
+            if not match_item(note_detail, platform="xhs", kind="content"):
+                continue
+            need_get_comment_note_ids.append(note_detail.get("note_id", ""))
+            xsec_tokens.append(note_detail.get("xsec_token", ""))
+            await xhs_store.update_xhs_note(note_detail)
+            await self.get_notice_media(note_detail)
         await self.batch_get_note_comments(need_get_comment_note_ids, xsec_tokens)
 
     async def get_note_detail_async_task(

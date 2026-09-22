@@ -24,7 +24,7 @@
 from typing import List
 
 import config
-from tools.time_filter import match_item
+from tools.time_filter import is_content_dropped, mark_content_dropped, match_item
 from var import source_keyword_var
 
 from ._store_impl import *
@@ -157,6 +157,7 @@ def _extract_music_download_url(aweme_detail: Dict) -> str:
 
 async def update_douyin_aweme(aweme_item: Dict):
     if not match_item(aweme_item, platform="dy", kind="content"):
+        mark_content_dropped(aweme_item.get("aweme_id"))
         return
     aweme_id = aweme_item.get("aweme_id")
     user_info = aweme_item.get("author", {})
@@ -199,6 +200,8 @@ async def batch_update_dy_aweme_comments(aweme_id: str, comments: List[Dict]):
 
 
 async def update_dy_aweme_comment(aweme_id: str, comment_item: Dict):
+    if is_content_dropped(aweme_id):
+        return
     if not match_item(comment_item, platform="dy", kind="comment"):
         return
     comment_aweme_id = comment_item.get("aweme_id")
@@ -255,6 +258,8 @@ async def save_creator(user_id: str, creator: Dict):
 
 
 async def update_dy_aweme_image(aweme_id, pic_content, extension_file_name):
+    if is_content_dropped(aweme_id):
+        return
     """
     Update Douyin note image
     Args:
@@ -270,6 +275,8 @@ async def update_dy_aweme_image(aweme_id, pic_content, extension_file_name):
 
 
 async def update_dy_aweme_video(aweme_id, video_content, extension_file_name):
+    if is_content_dropped(aweme_id):
+        return
     """
     Update Douyin short video
     Args:

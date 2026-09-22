@@ -25,7 +25,7 @@
 from typing import List
 
 import config
-from tools.time_filter import match_item
+from tools.time_filter import is_content_dropped, mark_content_dropped, match_item
 from var import source_keyword_var
 
 from ._store_impl import *
@@ -54,6 +54,7 @@ class BiliStoreFactory:
 
 async def update_bilibili_video(video_item: Dict):
     if not match_item(video_item, platform="bili", kind="content"):
+        mark_content_dropped((video_item.get("View") or {}).get("aid"))
         return
     video_item_view: Dict = video_item.get("View")
     video_user_info: Dict = video_item_view.get("owner")
@@ -112,6 +113,8 @@ async def batch_update_bilibili_video_comments(video_id: str, comments: List[Dic
 
 
 async def update_bilibili_video_comment(video_id: str, comment_item: Dict):
+    if is_content_dropped(video_id):
+        return
     if not match_item(comment_item, platform="bili", kind="comment"):
         return
     comment_id = str(comment_item.get("rpid"))

@@ -42,7 +42,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import weibo as weibo_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
-from tools.time_filter import STOP, SKIP, SearchTimeGuard
+from tools.time_filter import STOP, SKIP, SearchTimeGuard, match_item
 from var import crawler_type_var, source_keyword_var
 
 from .client import WeiboClient
@@ -215,10 +215,15 @@ class WeiboCrawler(AbstractCrawler):
         semaphore = asyncio.Semaphore(config.MAX_CONCURRENCY_NUM)
         task_list = [self.get_note_info_task(note_id=note_id, semaphore=semaphore) for note_id in config.WEIBO_SPECIFIED_ID_LIST]
         video_details = await asyncio.gather(*task_list)
-        for note_item in video_details:
-            if note_item:
-                await weibo_store.update_weibo_note(note_item)
-        await self.batch_get_notes_comments(config.WEIBO_SPECIFIED_ID_LIST)
+        kept_note_ids = []
+        for note_item, note_id in zip(video_details, config.WEIBO_SPECIFIED_ID_LIST):
+            if not note_item:
+                continue
+            if not match_item(note_item, platform="wb", kind="content"):
+                continue
+            kept_note_ids.append(note_id)
+            await weibo_store.update_weibo_note(note_item)
+        await self.batch_get_notes_comments(kept_note_ids)
 
     async def get_note_info_task(self, note_id: str, semaphore: asyncio.Semaphore) -> Optional[Dict]:
         """

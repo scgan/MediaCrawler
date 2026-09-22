@@ -40,7 +40,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import kuaishou as kuaishou_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
-from tools.time_filter import STOP, SKIP, SearchTimeGuard
+from tools.time_filter import STOP, SKIP, SearchTimeGuard, match_item
 from var import comment_tasks_var, crawler_type_var, source_keyword_var
 
 from .client import KuaiShouClient
@@ -219,10 +219,15 @@ class KuaishouCrawler(AbstractCrawler):
             for video_id in video_ids
         ]
         video_details = await asyncio.gather(*task_list)
-        for video_detail in video_details:
-            if video_detail is not None:
-                await kuaishou_store.update_kuaishou_video(video_detail)
-        await self.batch_get_video_comments(video_ids)
+        kept_video_ids = []
+        for video_detail, video_id in zip(video_details, video_ids):
+            if video_detail is None:
+                continue
+            if not match_item(video_detail, platform="ks", kind="content"):
+                continue
+            kept_video_ids.append(video_id)
+            await kuaishou_store.update_kuaishou_video(video_detail)
+        await self.batch_get_video_comments(kept_video_ids)
 
     async def get_video_info_task(
         self, video_id: str, semaphore: asyncio.Semaphore

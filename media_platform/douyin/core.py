@@ -37,7 +37,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import douyin as douyin_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
-from tools.time_filter import STOP, SKIP, SearchTimeGuard
+from tools.time_filter import STOP, SKIP, SearchTimeGuard, match_item
 from var import crawler_type_var, source_keyword_var
 
 from .client import DouYinClient
@@ -227,11 +227,17 @@ class DouYinCrawler(AbstractCrawler):
         semaphore = asyncio.Semaphore(config.MAX_CONCURRENCY_NUM)
         task_list = [self.get_aweme_detail(aweme_id=aweme_id, semaphore=semaphore) for aweme_id in aweme_id_list]
         aweme_details = await asyncio.gather(*task_list)
-        for aweme_detail in aweme_details:
-            if aweme_detail is not None:
-                await douyin_store.update_douyin_aweme(aweme_item=aweme_detail)
-                await self.get_aweme_media(aweme_item=aweme_detail)
-        await self.batch_get_note_comments(aweme_id_list)
+        kept_aweme_ids = []
+        for aweme_detail, aweme_id in zip(aweme_details, aweme_id_list):
+            if aweme_detail is None:
+                continue
+            # 内容未通过时间过滤时跳过，避免抓评论/媒体产生孤儿数据
+            if not match_item(aweme_detail, platform="dy", kind="content"):
+                continue
+            kept_aweme_ids.append(aweme_id)
+            await douyin_store.update_douyin_aweme(aweme_item=aweme_detail)
+            await self.get_aweme_media(aweme_item=aweme_detail)
+        await self.batch_get_note_comments(kept_aweme_ids)
 
     async def get_aweme_detail(self, aweme_id: str, semaphore: asyncio.Semaphore) -> Any:
         """Get note detail"""

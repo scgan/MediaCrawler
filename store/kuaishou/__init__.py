@@ -25,7 +25,7 @@
 from typing import List
 
 import config
-from tools.time_filter import match_item
+from tools.time_filter import is_content_dropped, mark_content_dropped, match_item
 from var import source_keyword_var
 
 from ._store_impl import *
@@ -54,6 +54,7 @@ class KuaishouStoreFactory:
 
 async def update_kuaishou_video(video_item: Dict):
     if not match_item(video_item, platform="ks", kind="content"):
+        mark_content_dropped((video_item.get("photo") or {}).get("id"))
         return
     photo_info: Dict = video_item.get("photo", {})
     video_id = photo_info.get("id")
@@ -91,6 +92,8 @@ async def batch_update_ks_video_comments(video_id: str, comments: List[Dict]):
 
 
 async def update_ks_video_comment(video_id: str, comment_item: Dict):
+    if is_content_dropped(video_id):
+        return
     if not match_item(comment_item, platform="ks", kind="comment"):
         return
     # V2 API uses snake_case field names and comment_id is int type

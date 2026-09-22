@@ -41,7 +41,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import zhihu as zhihu_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
-from tools.time_filter import STOP, SKIP, SearchTimeGuard
+from tools.time_filter import STOP, SKIP, SearchTimeGuard, match_item
 from var import crawler_type_var, source_keyword_var
 
 from .client import ZhiHuClient
@@ -322,7 +322,12 @@ class ZhihuCrawler(AbstractCrawler):
             # )
 
             # Get all comments of the creator's contents
-            await self.batch_get_content_comments(all_content_list)
+            # 只给通过时间过滤的内容抓评论，避免产生孤儿评论
+            kept_contents = [
+                c for c in (all_content_list or [])
+                if match_item(c, platform="zhihu", kind="content")
+            ]
+            await self.batch_get_content_comments(kept_contents)
 
     async def get_note_detail(
         self, full_note_url: str, semaphore: asyncio.Semaphore

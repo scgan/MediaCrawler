@@ -378,6 +378,52 @@ def filter_item_list(items: list, platform: str, kind: str = "content") -> list:
 
 
 # ---------------------------------------------------------------------------
+# 被丢弃内容登记表（防止「内容被过滤、评论却留下」的孤儿评论）
+# ---------------------------------------------------------------------------
+# 场景：detail / creator 模式下，core 先把要抓评论的 ID 收集好，再调用 store 保存内容。
+# 若内容因时间过滤被丢弃，其评论仍会被抓取并落库，产生没有父内容的孤儿评论。
+#
+# 这里让 store 层在丢弃内容时登记其 ID，评论落库前反查：
+# 父内容已被丢弃 -> 评论一并丢弃。
+# 采用「只登记被丢弃的、未知 ID 一律放行」的保守策略，避免因调用顺序差异误删评论。
+
+_dropped_content_ids: set = set()
+_dropped_registry_active: bool = False
+
+
+def reset_dropped_content_ids() -> None:
+    """清空登记表（主要用于测试，或同一进程内切换任务时）。"""
+    global _dropped_registry_active
+    _dropped_content_ids.clear()
+    _dropped_registry_active = False
+
+
+def mark_content_dropped(content_id: Any) -> None:
+    """登记一个因时间过滤被丢弃的内容 ID。"""
+    global _dropped_registry_active
+    if content_id is None or content_id == "":
+        return
+    _dropped_registry_active = True
+    _dropped_content_ids.add(str(content_id))
+
+
+def is_content_dropped(content_id: Any) -> bool:
+    """
+    判断某内容是否已被时间过滤丢弃。
+    未开启过滤 / ID 未知时返回 False（放行），保证不会比修复前更严格。
+    """
+    if not _dropped_registry_active:
+        return False
+    if content_id is None or content_id == "":
+        return False
+    return str(content_id) in _dropped_content_ids
+
+
+def dropped_content_count() -> int:
+    return len(_dropped_content_ids)
+
+
+# ---------------------------------------------------------------------------
 # search 模式专用：守卫器
 # ---------------------------------------------------------------------------
 # 解决两个问题：

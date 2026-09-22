@@ -22,7 +22,7 @@
 from typing import List
 
 from model.m_baidu_tieba import TiebaComment, TiebaCreator, TiebaNote
-from tools.time_filter import match_item
+from tools.time_filter import is_content_dropped, mark_content_dropped, match_item
 from var import source_keyword_var
 
 from ._store_impl import *
@@ -74,6 +74,7 @@ async def update_tieba_note(note_item: TiebaNote):
 
     """
     if not match_item(note_item, platform="tieba", kind="content"):
+        mark_content_dropped(getattr(note_item, "note_id", ""))
         return
     note_item.source_keyword = source_keyword_var.get()
     save_note_item = note_item.model_dump()
@@ -100,6 +101,8 @@ async def batch_update_tieba_note_comments(note_id: str, comments: List[TiebaCom
 
 
 async def update_tieba_note_comment(note_id: str, comment_item: TiebaComment):
+    if is_content_dropped(note_id):
+        return
     """
     Update tieba note comment
     Args:

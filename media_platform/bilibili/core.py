@@ -45,7 +45,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import bilibili as bilibili_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
-from tools.time_filter import STOP, SKIP, SearchTimeGuard, get_time_range_filter
+from tools.time_filter import STOP, SKIP, SearchTimeGuard, match_item, get_time_range_filter
 from var import crawler_type_var, source_keyword_var
 
 from .client import BilibiliClient
@@ -484,6 +484,9 @@ class BilibiliCrawler(AbstractCrawler):
         video_aids_list = []
         for video_detail in video_details:
             if video_detail is not None:
+                # 内容未通过时间过滤时跳过，避免抓评论/媒体产生孤儿数据
+                if not match_item(video_detail, platform="bili", kind="content"):
+                    continue
                 video_item_view: Dict = video_detail.get("View")
                 video_aid: str = video_item_view.get("aid")
                 if video_aid:

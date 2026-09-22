@@ -23,7 +23,7 @@
 # @Desc    :
 
 import re
-from tools.time_filter import match_item
+from tools.time_filter import is_content_dropped, mark_content_dropped, match_item
 from typing import List
 
 from var import source_keyword_var
@@ -80,6 +80,7 @@ async def update_weibo_note(note_item: Dict):
         return
 
     if not match_item(note_item, platform="wb", kind="content"):
+        mark_content_dropped((note_item.get("mblog") or {}).get("id"))
         return
 
     mblog: Dict = note_item.get("mblog")
@@ -129,6 +130,8 @@ async def batch_update_weibo_note_comments(note_id: str, comments: List[Dict]):
 
 
 async def update_weibo_note_comment(note_id: str, comment_item: Dict):
+    if is_content_dropped(note_id):
+        return
     """
     Update weibo note comment
     Args:

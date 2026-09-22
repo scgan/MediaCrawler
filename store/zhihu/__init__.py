@@ -32,7 +32,7 @@ from ._store_impl import (ZhihuCsvStoreImplement,
                                           ZhihuMongoStoreImplement,
                                           ZhihuExcelStoreImplement)
 from tools import utils
-from tools.time_filter import match_item
+from tools.time_filter import is_content_dropped, mark_content_dropped, match_item
 from var import source_keyword_var
 
 
@@ -80,6 +80,7 @@ async def update_zhihu_content(content_item: ZhihuContent):
 
     """
     if not match_item(content_item, platform="zhihu", kind="content"):
+        mark_content_dropped(getattr(content_item, "content_id", ""))
         return
     content_item.source_keyword = source_keyword_var.get()
     local_db_item = content_item.model_dump()
@@ -106,6 +107,8 @@ async def batch_update_zhihu_note_comments(comments: List[ZhihuComment]):
 
 
 async def update_zhihu_content_comment(comment_item: ZhihuComment):
+    if is_content_dropped(getattr(comment_item, "content_id", "")):
+        return
     """
     Update Zhihu content comment
     Args:
