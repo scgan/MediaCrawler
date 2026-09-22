@@ -24,6 +24,7 @@
 from typing import List
 
 import config
+from tools.time_filter import match_item
 from var import source_keyword_var
 
 from ._store_impl import *
@@ -155,6 +156,8 @@ def _extract_music_download_url(aweme_detail: Dict) -> str:
 
 
 async def update_douyin_aweme(aweme_item: Dict):
+    if not match_item(aweme_item, platform="dy", kind="content"):
+        return
     aweme_id = aweme_item.get("aweme_id")
     user_info = aweme_item.get("author", {})
     interact_info = aweme_item.get("statistics", {})
@@ -196,6 +199,8 @@ async def batch_update_dy_aweme_comments(aweme_id: str, comments: List[Dict]):
 
 
 async def update_dy_aweme_comment(aweme_id: str, comment_item: Dict):
+    if not match_item(comment_item, platform="dy", kind="comment"):
+        return
     comment_aweme_id = comment_item.get("aweme_id")
     if aweme_id != comment_aweme_id:
         utils.logger.error(f"[store.douyin.update_dy_aweme_comment] comment_aweme_id: {comment_aweme_id} != aweme_id: {aweme_id}")

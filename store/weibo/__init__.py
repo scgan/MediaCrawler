@@ -23,6 +23,7 @@
 # @Desc    :
 
 import re
+from tools.time_filter import match_item
 from typing import List
 
 from var import source_keyword_var
@@ -76,6 +77,9 @@ async def update_weibo_note(note_item: Dict):
 
     """
     if not note_item:
+        return
+
+    if not match_item(note_item, platform="wb", kind="content"):
         return
 
     mblog: Dict = note_item.get("mblog")
@@ -135,6 +139,8 @@ async def update_weibo_note_comment(note_id: str, comment_item: Dict):
 
     """
     if not comment_item or not note_id:
+        return
+    if not match_item(comment_item, platform="wb", kind="comment"):
         return
     comment_id = str(comment_item.get("id"))
     user_info: Dict = comment_item.get("user")

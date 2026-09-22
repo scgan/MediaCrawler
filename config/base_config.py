@@ -120,6 +120,33 @@ START_PAGE = 1
 # Control the number of crawled videos/posts
 CRAWLER_MAX_NOTES_COUNT = 15
 
+# ==================== 按发布时间区间过滤 ====================
+# 是否启用时间范围过滤，开启后只保留发布时间落在 [START_TIME, END_TIME] 内的数据
+ENABLE_TIME_RANGE_FILTER = False
+
+# 起始时间（含）。支持 "YYYY-MM-DD"、"YYYY-MM-DD HH:MM:SS"、"YYYY/MM/DD"
+# 只给日期时按当天 00:00:00 处理；留空表示不限制下限
+START_TIME = ""
+
+# 结束时间（含）。格式同上
+# 只给日期时按当天 23:59:59 处理；留空表示不限制上限
+END_TIME = ""
+
+# 是否对评论也施加同样的时间过滤。
+# 默认 False：评论跟随其所属内容，内容通过过滤则该内容下的评论全部保留。
+ENABLE_TIME_FILTER_FOR_COMMENTS = False
+
+# 时间过滤未命中时的处理策略（对 search 模式生效）：
+#   skip    - 丢弃，且不计入 CRAWLER_MAX_NOTES_COUNT 配额（推荐，保证采满目标条数）
+#   stop    - 丢弃，并立即终止当前关键词的翻页（要求结果按时间倒序，可省大量无效请求）
+#   keep    - 仍然保存（等同关闭过滤，仅用于调试）
+TIME_FILTER_OUT_OF_RANGE_ACTION = "skip"
+
+# 策略为 skip 时的翻页余量倍数。
+# 因为被时间过滤丢弃的数据不计入配额，需要多翻几页才能凑够 CRAWLER_MAX_NOTES_COUNT。
+# 设为 1 表示不额外放宽（可能采不满）；越大越容易采满，但请求量也越多。
+TIME_FILTER_PAGE_BUDGET_FACTOR = 10
+
 # Controlling the number of concurrent crawlers
 MAX_CONCURRENCY_NUM = 1
 

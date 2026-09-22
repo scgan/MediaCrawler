@@ -32,6 +32,7 @@ from ._store_impl import (ZhihuCsvStoreImplement,
                                           ZhihuMongoStoreImplement,
                                           ZhihuExcelStoreImplement)
 from tools import utils
+from tools.time_filter import match_item
 from var import source_keyword_var
 
 
@@ -78,6 +79,8 @@ async def update_zhihu_content(content_item: ZhihuContent):
     Returns:
 
     """
+    if not match_item(content_item, platform="zhihu", kind="content"):
+        return
     content_item.source_keyword = source_keyword_var.get()
     local_db_item = content_item.model_dump()
     local_db_item.update({"last_modify_ts": utils.get_current_timestamp()})
@@ -111,6 +114,8 @@ async def update_zhihu_content_comment(comment_item: ZhihuComment):
     Returns:
 
     """
+    if not match_item(comment_item, platform="zhihu", kind="comment"):
+        return
     local_db_item = comment_item.model_dump()
     local_db_item.update({"last_modify_ts": utils.get_current_timestamp()})
     utils.logger.info(f"[store.zhihu.update_zhihu_note_comment] zhihu content comment:{local_db_item}")

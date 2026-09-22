@@ -25,6 +25,7 @@
 from typing import List
 
 import config
+from tools.time_filter import match_item
 from var import source_keyword_var
 
 from ._store_impl import *
@@ -52,6 +53,8 @@ class BiliStoreFactory:
 
 
 async def update_bilibili_video(video_item: Dict):
+    if not match_item(video_item, platform="bili", kind="content"):
+        return
     video_item_view: Dict = video_item.get("View")
     video_user_info: Dict = video_item_view.get("owner")
     video_item_stat: Dict = video_item_view.get("stat")
@@ -109,6 +112,8 @@ async def batch_update_bilibili_video_comments(video_id: str, comments: List[Dic
 
 
 async def update_bilibili_video_comment(video_id: str, comment_item: Dict):
+    if not match_item(comment_item, platform="bili", kind="comment"):
+        return
     comment_id = str(comment_item.get("rpid"))
     parent_comment_id = str(comment_item.get("parent", 0))
     content: Dict = comment_item.get("content")

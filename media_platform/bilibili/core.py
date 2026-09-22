@@ -45,6 +45,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import bilibili as bilibili_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
+from tools.time_filter import STOP, SKIP, SearchTimeGuard, get_time_range_filter
 from var import crawler_type_var, source_keyword_var
 
 from .client import BilibiliClient
@@ -137,6 +138,14 @@ class BilibiliCrawler(AbstractCrawler):
         """
         search bilibili video
         """
+        # 统一的 START_TIME / END_TIME 优先：B 站搜索接口原生支持 pubtime_begin_s/pubtime_end_s，
+        # 直接下推到 API 比先抓后过滤省掉大量无效请求。
+        # 用户在 BILI_SEARCH_MODE 里显式指定过时间区间模式时，尊重其原有配置。
+        if get_time_range_filter().enabled and config.BILI_SEARCH_MODE == "normal":
+            self._apply_unified_time_range_to_bili_config()
+            await self.search_by_keywords_in_time_range(daily_limit=False, per_day_limit=False)
+            return
+
         # Search for video and retrieve their comment information.
         if config.BILI_SEARCH_MODE == "normal":
             await self.search_by_keywords()
@@ -146,6 +155,45 @@ class BilibiliCrawler(AbstractCrawler):
             await self.search_by_keywords_in_time_range(daily_limit=True)
         else:
             utils.logger.warning(f"Unknown BILI_SEARCH_MODE: {config.BILI_SEARCH_MODE}")
+
+    @staticmethod
+    def _unified_pubtime_range() -> tuple:
+        """
+        把全局 START_TIME / END_TIME 转成 B 站搜索接口需要的 pubtime_begin_s / pubtime_end_s。
+        未启用时间过滤时返回 (0, 0)，行为与改造前完全一致。
+        """
+        time_filter = get_time_range_filter()
+        if not time_filter.enabled:
+            return 0, 0
+        return time_filter.start_ts or 0, time_filter.end_ts or 0
+
+    @staticmethod
+    def _apply_unified_time_range_to_bili_config():
+        """
+        把全局 START_TIME / END_TIME 转成 B 站按天遍历所需的 START_DAY / END_DAY。
+        START_TIME/END_TIME 可能带时分秒，这里只取日期部分。
+        """
+        def _to_day(value: str) -> str:
+            text = (value or "").strip()
+            if not text:
+                return ""
+            return text.split(" ")[0].split("T")[0].replace("/", "-")
+
+        start_day = _to_day(getattr(config, "START_TIME", ""))
+        end_day = _to_day(getattr(config, "END_TIME", ""))
+
+        # 只给了下界/上界时，另一侧给一个足够宽的默认边界，保证 date_range 能正常工作
+        if start_day and not end_day:
+            end_day = datetime.now().strftime("%Y-%m-%d")
+        if end_day and not start_day:
+            start_day = "1970-01-01"
+
+        if start_day and end_day:
+            config.START_DAY = start_day
+            config.END_DAY = end_day
+            utils.logger.info(
+                f"[BilibiliCrawler.search] 已按全局时间范围切换到按天遍历模式: {start_day} ~ {end_day}"
+            )
 
     @staticmethod
     async def get_pubtime_datetime(
@@ -194,7 +242,11 @@ class BilibiliCrawler(AbstractCrawler):
             source_keyword_var.set(keyword)
             utils.logger.info(f"[BilibiliCrawler.search_by_keywords] Current search keyword: {keyword}")
             page = 1
-            while (page - start_page + 1) * bili_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
+            guard = SearchTimeGuard("bili", config.CRAWLER_MAX_NOTES_COUNT)
+            stop_paging = False
+            while (page - start_page + 1) * bili_limit_count <= guard.page_budget(bili_limit_count):
+                if stop_paging or guard.reached_limit:
+                    break
                 if page < start_page:
                     utils.logger.info(f"[BilibiliCrawler.search_by_keywords] Skip page: {page}")
                     page += 1
@@ -203,13 +255,15 @@ class BilibiliCrawler(AbstractCrawler):
                 utils.logger.info(f"[BilibiliCrawler.search_by_keywords] search bilibili keyword: {keyword}, page: {page}")
                 video_id_list: List[str] = []
                 try:
+                    # 全局时间范围开启时直接下推到 B 站搜索接口的原生时间参数
+                    _pub_begin, _pub_end = self._unified_pubtime_range()
                     videos_res = await self.bili_client.search_video_by_keyword(
                         keyword=keyword,
                         page=page,
                         page_size=bili_limit_count,
                         order=SearchOrderType.DEFAULT,
-                        pubtime_begin_s=0,  # Publish date start timestamp
-                        pubtime_end_s=0,  # Publish date end timestamp
+                        pubtime_begin_s=_pub_begin,  # Publish date start timestamp
+                        pubtime_end_s=_pub_end,  # Publish date end timestamp
                     )
                 except DataFetchError as ex:
                     utils.logger.error(
@@ -230,23 +284,40 @@ class BilibiliCrawler(AbstractCrawler):
                     utils.logger.warning(f"[BilibiliCrawler.search_by_keywords] error in the task list. The video for this page will not be included. {e}")
                 video_items = await asyncio.gather(*task_list)
                 for video_item in video_items:
-                    if video_item:
-                        video_id_list.append(video_item.get("View").get("aid"))
-                        await bilibili_store.update_bilibili_video(video_item)
-                        await bilibili_store.update_up_info(video_item)
-                        await self.get_bilibili_video(video_item, semaphore)
+                    if guard.reached_limit:
+                        break
+                    if not video_item:
+                        continue
+                    decision = guard.evaluate(video_item)
+                    if decision == STOP:
+                        utils.logger.info(
+                            f"[BilibiliCrawler.search_by_keywords] 内容已超出时间范围下界，停止翻页: {guard.summary(keyword)}"
+                        )
+                        stop_paging = True
+                        break
+                    if decision == SKIP:
+                        continue
+                    video_id_list.append(video_item.get("View").get("aid"))
+                    await bilibili_store.update_bilibili_video(video_item)
+                    await bilibili_store.update_up_info(video_item)
+                    await self.get_bilibili_video(video_item, semaphore)
                 page += 1
 
                 # Sleep after page navigation
                 await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
                 utils.logger.info(f"[BilibiliCrawler.search_by_keywords] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
 
-                await self.batch_get_video_comments(video_id_list)
+                if video_id_list:
+                    await self.batch_get_video_comments(video_id_list)
+            utils.logger.info(f"[BilibiliCrawler.search_by_keywords] {guard.summary(keyword)}")
 
-    async def search_by_keywords_in_time_range(self, daily_limit: bool):
+    async def search_by_keywords_in_time_range(self, daily_limit: bool, per_day_limit: bool = True):
         """
         Search bilibili video with keywords in a given time range.
         :param daily_limit: if True, strictly limit the number of notes per day and total.
+        :param per_day_limit: 是否限制每天最多采集 MAX_NOTES_PER_DAY 条。
+                              由全局 START_TIME/END_TIME 驱动时设为 False，让 CRAWLER_MAX_NOTES_COUNT
+                              作为整个区间的总量上限，而不是被单日上限卡住。
         """
         utils.logger.info(f"[BilibiliCrawler.search_by_keywords_in_time_range] Begin search with daily_limit={daily_limit}")
         bili_limit_count = 20
@@ -271,7 +342,7 @@ class BilibiliCrawler(AbstractCrawler):
                 notes_count_this_day = 0
 
                 while True:
-                    if notes_count_this_day >= config.MAX_NOTES_PER_DAY:
+                    if per_day_limit and notes_count_this_day >= config.MAX_NOTES_PER_DAY:
                         utils.logger.info(f"[BilibiliCrawler.search] Reached MAX_NOTES_PER_DAY limit for {day.ctime()}.")
                         break
                     if (daily_limit and total_notes_crawled_for_keyword >= config.CRAWLER_MAX_NOTES_COUNT):
@@ -307,7 +378,7 @@ class BilibiliCrawler(AbstractCrawler):
                                     break
                                 if (not daily_limit and total_notes_crawled_for_keyword >= config.CRAWLER_MAX_NOTES_COUNT):
                                     break
-                                if notes_count_this_day >= config.MAX_NOTES_PER_DAY:
+                                if per_day_limit and notes_count_this_day >= config.MAX_NOTES_PER_DAY:
                                     break
                                 notes_count_this_day += 1
                                 total_notes_crawled_for_keyword += 1

@@ -37,6 +37,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import douyin as douyin_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
+from tools.time_filter import STOP, SKIP, SearchTimeGuard
 from var import crawler_type_var, source_keyword_var
 
 from .client import DouYinClient
@@ -136,7 +137,11 @@ class DouYinCrawler(AbstractCrawler):
             aweme_list: List[str] = []
             page = 0
             dy_search_id = ""
-            while (page - start_page + 1) * dy_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
+            guard = SearchTimeGuard("dy", config.CRAWLER_MAX_NOTES_COUNT)
+            stop_paging = False
+            while (page - start_page + 1) * dy_limit_count <= guard.page_budget(dy_limit_count):
+                if stop_paging or guard.reached_limit:
+                    break
                 if page < start_page:
                     utils.logger.info(f"[DouYinCrawler.search] Skip {page}")
                     page += 1
@@ -163,9 +168,20 @@ class DouYinCrawler(AbstractCrawler):
                 dy_search_id = posts_res.get("extra", {}).get("logid", "")
                 page_aweme_list = []
                 for post_item in posts_res.get("data"):
+                    if guard.reached_limit:
+                        break
                     try:
                         aweme_info: Dict = (post_item.get("aweme_info") or post_item.get("aweme_mix_info", {}).get("mix_items")[0])
                     except TypeError:
+                        continue
+                    decision = guard.evaluate(aweme_info)
+                    if decision == STOP:
+                        utils.logger.info(
+                            f"[DouYinCrawler.search] 内容已超出时间范围下界，停止翻页: {guard.summary(keyword)}"
+                        )
+                        stop_paging = True
+                        break
+                    if decision == SKIP:
                         continue
                     aweme_list.append(aweme_info.get("aweme_id", ""))
                     page_aweme_list.append(aweme_info.get("aweme_id", ""))
@@ -173,11 +189,13 @@ class DouYinCrawler(AbstractCrawler):
                     await self.get_aweme_media(aweme_item=aweme_info)
                 
                 # Batch get note comments for the current page
-                await self.batch_get_note_comments(page_aweme_list)
+                if page_aweme_list:
+                    await self.batch_get_note_comments(page_aweme_list)
 
                 # Sleep after each page navigation
                 await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
                 utils.logger.info(f"[DouYinCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
+            utils.logger.info(f"[DouYinCrawler.search] {guard.summary(keyword)}")
             utils.logger.info(f"[DouYinCrawler.search] keyword:{keyword}, aweme_list:{aweme_list}")
 
     async def get_specified_awemes(self):

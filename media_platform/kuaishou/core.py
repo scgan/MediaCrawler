@@ -40,6 +40,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import kuaishou as kuaishou_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
+from tools.time_filter import STOP, SKIP, SearchTimeGuard
 from var import comment_tasks_var, crawler_type_var, source_keyword_var
 
 from .client import KuaiShouClient
@@ -140,9 +141,13 @@ class KuaishouCrawler(AbstractCrawler):
                 f"[KuaishouCrawler.search] Current search keyword: {keyword}"
             )
             page = 1
+            guard = SearchTimeGuard("ks", config.CRAWLER_MAX_NOTES_COUNT)
+            stop_paging = False
             while (
                 page - start_page + 1
-            ) * ks_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
+            ) * ks_limit_count <= guard.page_budget(ks_limit_count):
+                if stop_paging or guard.reached_limit:
+                    break
                 if page < start_page:
                     utils.logger.info(f"[KuaishouCrawler.search] Skip page: {page}")
                     page += 1
@@ -170,6 +175,17 @@ class KuaishouCrawler(AbstractCrawler):
                     continue
                 search_session_id = vision_search_photo.get("searchSessionId", "")
                 for video_detail in vision_search_photo.get("feeds"):
+                    if guard.reached_limit:
+                        break
+                    decision = guard.evaluate(video_detail)
+                    if decision == STOP:
+                        utils.logger.info(
+                            f"[KuaishouCrawler.search] 内容已超出时间范围下界，停止翻页: {guard.summary(keyword)}"
+                        )
+                        stop_paging = True
+                        break
+                    if decision == SKIP:
+                        continue
                     video_id_list.append(video_detail.get("photo", {}).get("id"))
                     await kuaishou_store.update_kuaishou_video(video_item=video_detail)
 
@@ -180,7 +196,9 @@ class KuaishouCrawler(AbstractCrawler):
                 await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
                 utils.logger.info(f"[KuaishouCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
 
-                await self.batch_get_video_comments(video_id_list)
+                if video_id_list:
+                    await self.batch_get_video_comments(video_id_list)
+            utils.logger.info(f"[KuaishouCrawler.search] {guard.summary(keyword)}")
 
     async def get_specified_videos(self):
         """Get the information and comments of the specified post"""

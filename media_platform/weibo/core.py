@@ -42,6 +42,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import weibo as weibo_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
+from tools.time_filter import STOP, SKIP, SearchTimeGuard
 from var import crawler_type_var, source_keyword_var
 
 from .client import WeiboClient
@@ -162,7 +163,11 @@ class WeiboCrawler(AbstractCrawler):
             source_keyword_var.set(keyword)
             utils.logger.info(f"[WeiboCrawler.search] Current search keyword: {keyword}")
             page = 1
-            while (page - start_page + 1) * weibo_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
+            guard = SearchTimeGuard("wb", config.CRAWLER_MAX_NOTES_COUNT)
+            stop_paging = False
+            while (page - start_page + 1) * weibo_limit_count <= guard.page_budget(weibo_limit_count):
+                if stop_paging or guard.reached_limit:
+                    break
                 if page < start_page:
                     utils.logger.info(f"[WeiboCrawler.search] Skip page: {page}")
                     page += 1
@@ -174,9 +179,20 @@ class WeiboCrawler(AbstractCrawler):
                 # If full text fetching is enabled, batch get full text of posts
                 note_list = await self.batch_get_notes_full_text(note_list)
                 for note_item in note_list:
+                    if guard.reached_limit:
+                        break
                     if note_item:
                         mblog: Dict = note_item.get("mblog")
                         if mblog:
+                            decision = guard.evaluate(note_item)
+                            if decision == STOP:
+                                utils.logger.info(
+                                    f"[WeiboCrawler.search] 内容已超出时间范围下界，停止翻页: {guard.summary(keyword)}"
+                                )
+                                stop_paging = True
+                                break
+                            if decision == SKIP:
+                                continue
                             note_id_list.append(mblog.get("id"))
                             await weibo_store.update_weibo_note(note_item)
                             await self.get_note_images(mblog)
@@ -187,7 +203,9 @@ class WeiboCrawler(AbstractCrawler):
                 await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
                 utils.logger.info(f"[WeiboCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
 
-                await self.batch_get_notes_comments(note_id_list)
+                if note_id_list:
+                    await self.batch_get_notes_comments(note_id_list)
+            utils.logger.info(f"[WeiboCrawler.search] {guard.summary(keyword)}")
 
     async def get_specified_notes(self):
         """

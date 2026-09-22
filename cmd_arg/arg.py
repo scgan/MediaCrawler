@@ -206,6 +206,30 @@ async def parse_cmd(argv: Optional[Sequence[str]] = None):
                 rich_help_panel="Basic Configuration",
             ),
         ] = config.CRAWLER_MAX_NOTES_COUNT,
+        start_time: Annotated[
+            str,
+            typer.Option(
+                "--start_time",
+                help="Only keep content published at or after this time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS), empty means no lower bound",
+                rich_help_panel="Time Range Filter",
+            ),
+        ] = config.START_TIME,
+        end_time: Annotated[
+            str,
+            typer.Option(
+                "--end_time",
+                help="Only keep content published at or before this time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS), empty means no upper bound",
+                rich_help_panel="Time Range Filter",
+            ),
+        ] = config.END_TIME,
+        time_filter_action: Annotated[
+            str,
+            typer.Option(
+                "--time_filter_action",
+                help="How to handle out-of-range items in search mode (skip=drop and keep crawling | stop=drop and stop paging | keep=save anyway)",
+                rich_help_panel="Time Range Filter",
+            ),
+        ] = config.TIME_FILTER_OUT_OF_RANGE_ACTION,
         get_comment: Annotated[
             str,
             typer.Option(
@@ -345,6 +369,21 @@ async def parse_cmd(argv: Optional[Sequence[str]] = None):
         config.KEYWORDS = keywords
         if max_notes_count and max_notes_count > 0:
             config.CRAWLER_MAX_NOTES_COUNT = max_notes_count
+
+        # 时间范围过滤：只要任一边界非空就自动开启
+        config.START_TIME = start_time
+        config.END_TIME = end_time
+        if start_time.strip() or end_time.strip():
+            config.ENABLE_TIME_RANGE_FILTER = True
+        action = (time_filter_action or "skip").strip().lower()
+        if action not in ("skip", "stop", "keep"):
+            typer.secho(
+                f"⚠️ --time_filter_action '{time_filter_action}' 不支持，回退为 'skip'。",
+                fg=typer.colors.YELLOW,
+            )
+            action = "skip"
+        config.TIME_FILTER_OUT_OF_RANGE_ACTION = action
+
         config.ENABLE_GET_COMMENTS = enable_comment
         config.ENABLE_GET_SUB_COMMENTS = enable_sub_comment
         config.HEADLESS = enable_headless

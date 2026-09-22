@@ -39,6 +39,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import xhs as xhs_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
+from tools.time_filter import STOP, SKIP, SearchTimeGuard
 from var import crawler_type_var, source_keyword_var
 
 from .client import XiaoHongShuClient
@@ -138,7 +139,11 @@ class XiaoHongShuCrawler(AbstractCrawler):
             utils.logger.info(f"[XiaoHongShuCrawler.search] Current search keyword: {keyword}")
             page = 1
             search_id = get_search_id()
-            while (page - start_page + 1) * xhs_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
+            guard = SearchTimeGuard("xhs", config.CRAWLER_MAX_NOTES_COUNT)
+            stop_paging = False
+            while (page - start_page + 1) * xhs_limit_count <= guard.page_budget(xhs_limit_count):
+                if stop_paging or guard.reached_limit:
+                    break
                 if page < start_page:
                     utils.logger.info(f"[XiaoHongShuCrawler.search] Skip page {page}")
                     page += 1
@@ -169,14 +174,27 @@ class XiaoHongShuCrawler(AbstractCrawler):
                     ]
                     note_details = await asyncio.gather(*task_list)
                     for note_detail in note_details:
-                        if note_detail:
-                            await xhs_store.update_xhs_note(note_detail)
-                            await self.get_notice_media(note_detail)
-                            note_ids.append(note_detail.get("note_id"))
-                            xsec_tokens.append(note_detail.get("xsec_token"))
+                        if guard.reached_limit:
+                            break
+                        if not note_detail:
+                            continue
+                        decision = guard.evaluate(note_detail)
+                        if decision == STOP:
+                            utils.logger.info(
+                                f"[XiaoHongShuCrawler.search] 内容已超出时间范围下界，停止翻页: {guard.summary(keyword)}"
+                            )
+                            stop_paging = True
+                            break
+                        if decision == SKIP:
+                            continue
+                        await xhs_store.update_xhs_note(note_detail)
+                        await self.get_notice_media(note_detail)
+                        note_ids.append(note_detail.get("note_id"))
+                        xsec_tokens.append(note_detail.get("xsec_token"))
                     page += 1
                     utils.logger.info(f"[XiaoHongShuCrawler.search] Note details: {note_details}")
-                    await self.batch_get_note_comments(note_ids, xsec_tokens)
+                    if note_ids:
+                        await self.batch_get_note_comments(note_ids, xsec_tokens)
 
                     # Sleep after each page navigation
                     await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
@@ -184,6 +202,7 @@ class XiaoHongShuCrawler(AbstractCrawler):
                 except DataFetchError:
                     utils.logger.error("[XiaoHongShuCrawler.search] Get note detail error")
                     break
+            utils.logger.info(f"[XiaoHongShuCrawler.search] {guard.summary(keyword)}")
 
     async def get_creators_and_notes(self) -> None:
         """Get creator's notes and retrieve their comment information."""

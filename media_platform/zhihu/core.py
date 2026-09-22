@@ -41,6 +41,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import zhihu as zhihu_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
+from tools.time_filter import STOP, SKIP, SearchTimeGuard
 from var import crawler_type_var, source_keyword_var
 
 from .client import ZhiHuClient
@@ -160,9 +161,13 @@ class ZhihuCrawler(AbstractCrawler):
                 f"[ZhihuCrawler.search] Current search keyword: {keyword}"
             )
             page = 1
+            guard = SearchTimeGuard("zhihu", config.CRAWLER_MAX_NOTES_COUNT)
+            stop_paging = False
             while (
                 page - start_page + 1
-            ) * zhihu_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
+            ) * zhihu_limit_count <= guard.page_budget(zhihu_limit_count):
+                if stop_paging or guard.reached_limit:
+                    break
                 if page < start_page:
                     utils.logger.info(f"[ZhihuCrawler.search] Skip page {page}")
                     page += 1
@@ -190,13 +195,28 @@ class ZhihuCrawler(AbstractCrawler):
                     utils.logger.info(f"[ZhihuCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
 
                     page += 1
+                    kept_contents = []
                     for content in content_list:
+                        if guard.reached_limit:
+                            break
+                        decision = guard.evaluate(content)
+                        if decision == STOP:
+                            utils.logger.info(
+                                f"[ZhihuCrawler.search] 内容已超出时间范围下界，停止翻页: {guard.summary(keyword)}"
+                            )
+                            stop_paging = True
+                            break
+                        if decision == SKIP:
+                            continue
+                        kept_contents.append(content)
                         await zhihu_store.update_zhihu_content(content)
 
-                    await self.batch_get_content_comments(content_list)
+                    if kept_contents:
+                        await self.batch_get_content_comments(kept_contents)
                 except DataFetchError:
                     utils.logger.error("[ZhihuCrawler.search] Search content error")
                     return
+            utils.logger.info(f"[ZhihuCrawler.search] {guard.summary(keyword)}")
 
     async def batch_get_content_comments(self, content_list: List[ZhihuContent]):
         """

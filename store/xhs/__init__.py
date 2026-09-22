@@ -24,6 +24,7 @@
 from typing import List
 
 import config
+from tools.time_filter import match_item
 from var import source_keyword_var
 
 from .xhs_store_media import *
@@ -93,6 +94,8 @@ async def update_xhs_note(note_item: Dict):
     Returns:
 
     """
+    if not match_item(note_item, platform="xhs", kind="content"):
+        return
     note_id = note_item.get("note_id")
     user_info = note_item.get("user", {})
     interact_info = note_item.get("interact_info", {})
@@ -158,6 +161,8 @@ async def update_xhs_note_comment(note_id: str, comment_item: Dict):
     Returns:
 
     """
+    if not match_item(comment_item, platform="xhs", kind="comment"):
+        return
     user_info = comment_item.get("user_info", {})
     comment_id = comment_item.get("id")
     comment_pictures = [item.get("url_default", "") for item in comment_item.get("pictures", [])]

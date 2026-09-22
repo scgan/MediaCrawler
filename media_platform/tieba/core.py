@@ -38,6 +38,7 @@ from proxy.proxy_ip_pool import IpInfoModel, ProxyIpPool, create_ip_pool
 from store import tieba as tieba_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
+from tools.time_filter import STOP, SKIP, SearchTimeGuard
 from var import crawler_type_var, source_keyword_var
 
 from .client import BaiduTieBaClient
@@ -164,9 +165,13 @@ class TieBaCrawler(AbstractCrawler):
                 f"[BaiduTieBaCrawler.search] Current search keyword: {keyword}"
             )
             page = 1
+            guard = SearchTimeGuard("tieba", config.CRAWLER_MAX_NOTES_COUNT)
+            stop_paging = False
             while (
                 page - start_page + 1
-            ) * tieba_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
+            ) * tieba_limit_count <= guard.page_budget(tieba_limit_count):
+                if stop_paging or guard.reached_limit:
+                    break
                 if page < start_page:
                     utils.logger.info(f"[BaiduTieBaCrawler.search] Skip page {page}")
                     page += 1
@@ -192,9 +197,22 @@ class TieBaCrawler(AbstractCrawler):
                     utils.logger.info(
                         f"[BaiduTieBaCrawler.search] Note list len: {len(notes_list)}"
                     )
-                    await self.get_specified_notes(
-                        note_id_list=[note_detail.note_id for note_detail in notes_list]
-                    )
+                    kept_note_ids = []
+                    for note_detail in notes_list:
+                        if guard.reached_limit:
+                            break
+                        decision = guard.evaluate(note_detail)
+                        if decision == STOP:
+                            utils.logger.info(
+                                f"[BaiduTieBaCrawler.search] 内容已超出时间范围下界，停止翻页: {guard.summary(keyword)}"
+                            )
+                            stop_paging = True
+                            break
+                        if decision == SKIP:
+                            continue
+                        kept_note_ids.append(note_detail.note_id)
+                    if kept_note_ids:
+                        await self.get_specified_notes(note_id_list=kept_note_ids)
 
                     # Sleep after page navigation
                     await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
