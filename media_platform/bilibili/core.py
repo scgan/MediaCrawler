@@ -607,7 +607,12 @@ class BilibiliCrawler(AbstractCrawler):
             return browser_context
         else:
             # type: ignore
-            browser = await chromium.launch(headless=headless, proxy=playwright_proxy, channel=config.BROWSER_CHANNEL)
+            browser = await chromium.launch(
+                headless=headless,
+                proxy=playwright_proxy,
+                channel=config.BROWSER_CHANNEL,
+                args=utils.build_browser_args(),
+            )
             browser_context = await browser.new_context(viewport={"width": 1920, "height": 1080}, user_agent=user_agent)
             utils.set_default_navigation_timeout(browser_context)
             return browser_context

@@ -234,6 +234,35 @@ def extract_url_params_to_dict(url: str) -> Dict:
     return url_params_dict
 
 
+def build_browser_args() -> list:
+    """
+    构造 Chromium 启动参数。
+
+    为什么需要这个：
+        标准模式（chromium.launch）默认不传 args，Chromium 会用 /dev/shm 作共享内存。
+        Docker 默认 /dev/shm 仅 64MB，本项目 compose 设了 2GB —— 多平台并行时
+        多个 Chromium 争抢，会触发渲染进程崩溃（Target crashed），
+        表现为莫名其妙的采集失败。
+        CDP 模式本来就带 --disable-dev-shm-usage（见 tools/browser_launcher.py），
+        这里补上标准模式缺失的部分。
+    """
+    import config  # 延迟导入，避免模块加载期循环依赖
+
+    args = []
+    if getattr(config, "DISABLE_DEV_SHM_USAGE", True):
+        args.append("--disable-dev-shm-usage")
+        args.append("--no-sandbox")
+        args.append("--disable-gpu")
+
+    extra = (getattr(config, "BROWSER_EXTRA_ARGS", "") or "").strip()
+    if extra:
+        for item in extra.replace("，", ",").split(","):
+            item = item.strip()
+            if item and item not in args:
+                args.append(item)
+    return args
+
+
 def set_default_navigation_timeout(browser_context) -> None:
     """
     统一设置浏览器上下文的导航超时（毫秒）。

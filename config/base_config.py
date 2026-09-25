@@ -230,6 +230,50 @@ BILI_REQUEST_RETRY_BASE_DELAY = _env_int("MEDIACRAWLER_BILI_REQUEST_RETRY_BASE_D
 # 警告：禁用 SSL 验证将使所有流量暴露于中间人攻击风险，请勿在生产环境中开启。
 DISABLE_SSL_VERIFY = False
 
+# ==================== 多平台并行执行 ====================
+# 不同平台可同时爬取（各自独立进程，config 天然隔离）；同一平台默认串行。
+#
+# 为什么同一平台默认只能跑 1 个：
+#   launch_browser 的 user_data_dir 是按平台命名的固定目录
+#   （browser_data/{platform}_user_data_dir）。同一平台并行会同时打开同一个
+#   Chromium 用户目录，触发 profile 锁冲突，必然崩溃。
+#   若确需同平台并行，须同时满足：SAVE_LOGIN_STATE=False 且用 cookie 登录，
+#   否则登录态也会互相覆盖。
+# 说明：MediaCrawler 目前共 7 个平台（xhs / dy / ks / bili / wb / tieba / zhihu），
+#   设为 10 表示「所有平台全开」——实际并发数会被平台总数收敛到 7，不会超发。
+#   预留余量是为了将来新增平台时无需再改配置。
+#   注意：10 个 Chromium 全开约需 2.5GB 内存，且必须启用
+#   --disable-dev-shm-usage（见 DISABLE_DEV_SHM_USAGE），否则会抢 /dev/shm 崩溃。
+MAX_PARALLEL_PLATFORMS = _env_int("MEDIACRAWLER_MAX_PARALLEL_PLATFORMS", 10)
+
+# 单平台并发数。默认 1（见上方说明）。
+# 需要放开时通过环境变量覆盖，例如 MEDIACRAWLER_PLATFORM_MAX_PARALLEL_XHS=2
+DEFAULT_PLATFORM_MAX_PARALLEL = _env_int("MEDIACRAWLER_PLATFORM_MAX_PARALLEL", 1)
+
+# 单平台任务的超时（秒）。超时后会被终止。
+PLATFORM_TASK_TIMEOUT_SECONDS = _env_int("MEDIACRAWLER_PLATFORM_TASK_TIMEOUT", 1800)
+
+# 某平台失败时是否中止其余平台。False=其余平台继续跑完。
+PARALLEL_FAIL_FAST = _env_bool("MEDIACRAWLER_PARALLEL_FAIL_FAST", False)
+
+# ==================== 浏览器共享内存（多平台并行关键）====================
+# Chromium 默认把 /dev/shm 当作共享内存使用。Docker 默认只给 64MB，
+# 本项目 docker-compose 里设的是 2GB。多平台并行时多个 Chromium 争抢
+# /dev/shm，会触发 "Target crashed" / 渲染进程崩溃，被误记为采集失败。
+#
+# 开启后 Chromium 改用 /tmp 而非 /dev/shm，彻底摆脱该限制。
+# CDP 模式本来就带这个参数（见 tools/browser_launcher.py），
+# 这里补上「标准模式」（chromium.launch 不传 args）缺失的部分。
+DISABLE_DEV_SHM_USAGE = _env_bool("MEDIACRAWLER_DISABLE_DEV_SHM_USAGE", True)
+
+# 附加给 Chromium 的启动参数（逗号分隔）。留空则只加 --disable-dev-shm-usage。
+# 例：MEDIACRAWLER_BROWSER_EXTRA_ARGS="--no-sandbox,--disable-gpu"
+BROWSER_EXTRA_ARGS = os.getenv("MEDIACRAWLER_BROWSER_EXTRA_ARGS", "")
+
+# 提交任务时若目标平台槽位已满，是否排队等待。
+# False 时直接返回「平台忙」（HTTP 409），由调用方自行重试。
+PARALLEL_QUEUE_WHEN_BUSY = _env_bool("MEDIACRAWLER_PARALLEL_QUEUE_WHEN_BUSY", False)
+
 from .bilibili_config import *
 from .xhs_config import *
 from .dy_config import *

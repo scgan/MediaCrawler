@@ -14,25 +14,76 @@ services:
 
     ports:
       - "8080:8080"   # MediaCrawler WebUI
-      - "6080:6080"   # noVNC 浏览器窗口
+      - "6080:6080"   # noVNC 浏览器窗口（仅首次人工扫码登录时需要）
       - "5900:5900"   # VNC，可选
 
     environment:
       TZ: Asia/Shanghai
       DISPLAY: ":99"
 
-      # Docker 登录关键配置
-      MEDIACRAWLER_HEADLESS: "false"
+      # ============================================================
+      # ★ 并行场景下必须为 true
+      #
+      # 原因：entrypoint.sh 只启动了【一个】Xvfb（1920x1080）。
+      #   headless=false 时，7 个有头 Chromium 会全部渲染到这一块虚拟屏上：
+      #     - 窗口互相遮挡、争抢同一屏幕
+      #     - Xvfb 单线程合成 7 个窗口，成为瓶颈
+      #     - 有头模式要真实渲染，开销远高于无头
+      #     - VNC 里只能看到最上面那个窗口
+      #
+      # 但 headless 下无法扫码，所以正确姿势是两步走：
+      #   1) 首次：临时改 false -> 开 http://<host>:6080 用 noVNC 人工扫码
+      #      登录态会存进 browser_data（该目录已挂载为卷，重启不丢）
+      #   2) 之后：改回 true -> 复用登录态（pong() 成功即跳过登录），并行跑
+      #
+      # 也可全程 true + cookie 登录（见 Cookie 登录功能）。
+      # ============================================================
+      MEDIACRAWLER_HEADLESS: "true"
+
       MEDIACRAWLER_ENABLE_CDP: "false"
       MEDIACRAWLER_CDP_CONNECT_EXISTING: "false"
       MEDIACRAWLER_CDP_HEADLESS: "false"
       MEDIACRAWLER_BROWSER_LAUNCH_TIMEOUT: "90"
 
+      # ============================================================
+      # 多平台并行
+      #
+      # 代码里这些项的默认值已经是 10 / 1 / true，
+      # 这里显式写出是为了可审计、且不必改代码就能调整。
+      # ============================================================
+
+      # 全平台全开。MediaCrawler 目前共 7 个平台
+      # （xhs / dy / ks / bili / wb / tieba / zhihu），
+      # 设为 10 表示「所有平台全开」，实际并发会被平台总数收敛到 7，不会超发。
+      MEDIACRAWLER_MAX_PARALLEL_PLATFORMS: "10"
+
+      # 单平台并发数。保持 1：同一平台的 Chromium user_data_dir 是同一个目录，
+      # 并行打开会触发 profile 锁冲突，必然崩溃。
+      # 确需放开须同时满足 SAVE_LOGIN_STATE=False 且用 cookie 登录，
+      # 并可单独覆盖，如 MEDIACRAWLER_PLATFORM_MAX_PARALLEL_XHS=2。
+      MEDIACRAWLER_PLATFORM_MAX_PARALLEL: "1"
+
+      # 让 Chromium 改用 /tmp 而非 /dev/shm。
+      # 7 个实例争抢 /dev/shm 会触发渲染进程崩溃（Target crashed），
+      # 表现为莫名的采集失败。CDP 模式本就带此参数，
+      # 标准模式此前缺失，已在 7 个 core.py 的 launch_browser 中补齐。
+      MEDIACRAWLER_DISABLE_DEV_SHM_USAGE: "true"
+
     volumes:
       - ./data:/app/data
+      # 登录态持久化目录。首次人工登录后务必保留此卷，
+      # 否则容器重启登录态丢失，headless 下将无法采集。
       - ./browser_data:/app/browser_data
 
-    shm_size: "2gb"
+    # 实测单实例无头 Chromium 约 258MB（真实内容页）：
+    #   7 平台 ≈ 浏览器 1.9GB + Python 子进程 0.5GB ≈ 2.5GB
+    # 即便已加 --disable-dev-shm-usage，调大到 4GB 仍是零成本的双保险。
+    shm_size: "4gb"
 
     security_opt:
       - seccomp:unconfined
+
+    # 说明：这里【故意不设】mem_limit。
+    # 硬限制会触发 OOM kill，进程以非 0 退出码结束，
+    # 后端会记成「采集失败」——比慢一点更糟。
+    # 建议宿主预留 4GB 以上内存。

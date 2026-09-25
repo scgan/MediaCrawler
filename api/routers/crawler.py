@@ -25,7 +25,15 @@ from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel
 
-from ..schemas import CrawlerStartRequest, CrawlerStatusResponse
+from ..schemas import (
+    CrawlerBatchStartRequest,
+    CrawlerBatchStartResponse,
+    CrawlerPoolStatusResponse,
+    CrawlerStartRequest,
+    CrawlerStatusResponse,
+    CrawlerTaskInfo,
+    SkippedTask,
+)
 from ..services import crawler_manager
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
@@ -126,6 +134,69 @@ async def get_logs(limit: int = 100):
     """Get recent logs"""
     logs = crawler_manager.logs[-limit:] if limit > 0 else crawler_manager.logs
     return {"logs": [log.model_dump() for log in logs]}
+
+
+# ============================================================
+# 多平台并行：不同平台各自独立进程并行运行
+# ============================================================
+
+@router.post("/batch-start", response_model=CrawlerBatchStartResponse)
+async def start_crawler_batch(request: CrawlerBatchStartRequest):
+    """
+    并行启动多个平台任务。
+
+    不同平台互不阻塞；同一平台受并发上限约束（默认 1，
+    因为同一平台的 Chromium user_data_dir 是同一目录，并行会锁冲突）。
+
+    被跳过的平台会在 skipped 中返回，调用方可据此重试。
+    """
+    if not request.tasks:
+        raise HTTPException(status_code=400, detail="tasks 不能为空")
+
+    result = await crawler_manager.start_batch(request.tasks)
+    return CrawlerBatchStartResponse(
+        started=result["started"],
+        skipped=[SkippedTask(**item) for item in result["skipped"]],
+        started_count=result["started_count"],
+        skipped_count=result["skipped_count"],
+    )
+
+
+@router.get("/tasks", response_model=CrawlerPoolStatusResponse)
+async def get_pool_status():
+    """任务池状态：并发上限、各平台运行数、全部任务明细"""
+    status = crawler_manager.get_pool_status()
+    return CrawlerPoolStatusResponse(
+        max_parallel_platforms=status["max_parallel_platforms"],
+        default_platform_max_parallel=status["default_platform_max_parallel"],
+        running_total=status["running_total"],
+        platforms=status["platforms"],
+        jobs=[CrawlerTaskInfo(**job) for job in status["jobs"]],
+    )
+
+
+@router.get("/tasks/{platform}")
+async def get_platform_status(platform: str):
+    """查询单个平台的任务状态"""
+    return crawler_manager.platform_status(platform)
+
+
+@router.post("/stop/{platform}")
+async def stop_platform(platform: str):
+    """停止指定平台的所有任务"""
+    success = await crawler_manager.stop_platform(platform)
+    if not success:
+        raise HTTPException(status_code=400, detail=f"平台 {platform} 没有运行中的任务")
+    return {"status": "ok", "message": f"平台 {platform} 的任务已停止"}
+
+
+@router.post("/stop-all")
+async def stop_all():
+    """停止全部平台的任务"""
+    success = await crawler_manager.stop_all()
+    if not success:
+        raise HTTPException(status_code=400, detail="没有运行中的任务")
+    return {"status": "ok", "message": "全部任务已停止"}
 
 # @router.post("/run-and-read")
 # async def run_and_read(request: RunAndReadRequest):

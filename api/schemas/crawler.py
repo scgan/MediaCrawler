@@ -17,7 +17,7 @@
 # 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
 
 from enum import Enum
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from pydantic import BaseModel
 
 
@@ -106,3 +106,49 @@ class DataFileInfo(BaseModel):
     size: int
     modified_at: str
     record_count: Optional[int] = None
+
+
+# ==================== 多平台并行 ====================
+
+class CrawlerBatchStartRequest(BaseModel):
+    """批量启动请求：不同平台并行，同一平台受并发上限约束"""
+    tasks: List[CrawlerStartRequest]
+    # true 时，若某平台槽位已满则等待其空出；false 时直接跳过该平台
+    wait_when_busy: bool = False
+    # 等待槽位的超时秒数（仅 wait_when_busy=true 时有效）
+    wait_timeout: int = 60
+
+
+class SkippedTask(BaseModel):
+    """被跳过的任务"""
+    platform: str
+    reason: str
+
+
+class CrawlerBatchStartResponse(BaseModel):
+    """批量启动响应"""
+    started: List[str]
+    skipped: List[SkippedTask]
+    started_count: int
+    skipped_count: int
+
+
+class CrawlerTaskInfo(BaseModel):
+    """单个任务状态"""
+    job_id: str
+    platform: str
+    status: str
+    crawler_type: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    exit_code: Optional[int] = None
+    error_message: Optional[str] = None
+
+
+class CrawlerPoolStatusResponse(BaseModel):
+    """任务池状态"""
+    max_parallel_platforms: int
+    default_platform_max_parallel: int
+    running_total: int
+    platforms: dict
+    jobs: List[CrawlerTaskInfo]
