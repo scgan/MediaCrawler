@@ -17,7 +17,7 @@
 # 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
 
 from enum import Enum
-from typing import Optional, Literal, List
+from typing import Optional, Literal, List, Union
 from pydantic import BaseModel
 
 
@@ -74,10 +74,21 @@ class CrawlerStartRequest(BaseModel):
     headless: bool = False
 
     # ---- 按发布时间区间过滤（与 main.py 的 --start_time / --end_time 对应）----
-    # 支持 "YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM:SS"，留空表示该侧不限制。
+    # 支持三种形式，留空表示该侧不限制：
+    #   1) "YYYY-MM-DD" / "YYYY-MM-DD HH:MM:SS" 字符串
+    #   2) 数字字符串（秒级时间戳）
+    #   3) int/float 秒级时间戳
+    #
+    # ★ 必须接受 int：后端 zhengwu_analysis 的 _window_timestamp() 刻意传
+    #   绝对时间戳而非字符串——后端容器多为 UTC、爬虫容器为 CST，
+    #   传字符串会被按爬虫本地时区解释，造成 8 小时偏移。
+    #   早期版本这里只声明 Optional[str]，导致后端传 int 时 pydantic 报
+    #   "Input should be a valid string" -> FastAPI 422，且错误信息里
+    #   看不到是哪个字段（后端只显示 "422 Client Error"）。
+    #
     # 只给日期时：起始补到当天 00:00:00，结束补到当天 23:59:59（闭区间）。
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
+    start_time: Optional[Union[str, int, float]] = None
+    end_time: Optional[Union[str, int, float]] = None
     # 区间外数据的处理策略：skip=丢弃并继续翻页补足 | stop=丢弃并终止翻页 | keep=仍然保存
     time_filter_action: Optional[str] = None
 
