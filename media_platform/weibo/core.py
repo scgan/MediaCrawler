@@ -173,7 +173,30 @@ class WeiboCrawler(AbstractCrawler):
                     page += 1
                     continue
                 utils.logger.info(f"[WeiboCrawler.search] search weibo keyword: {keyword}, page: {page}")
-                search_res = await self.wb_client.get_note_by_keyword(keyword=keyword, page=page, search_type=search_type)
+                try:
+                    search_res = await self.wb_client.get_note_by_keyword(keyword=keyword, page=page, search_type=search_type)
+                except Exception as fetch_exc:
+                    # ★ 单页抓取失败绝不能让整个进程崩溃。
+                    #
+                    # 实测：搜索接口返回 302（未登录 / 被风控跳转）时，
+                    # client 重试 5 次后抛 DataFetchError -> tenacity.RetryError，
+                    # 一路冒泡到 main.py，进程以退出码 1 结束。
+                    # 后果不只是这一次失败：已经采集并入库的数据来不及走完
+                    # 收尾流程，调用方看到「退出码 1」且计数为 0。
+                    # 这里按关键词降级：记录错误，处理下一个关键词。
+                    message = str(fetch_exc)
+                    if "302" in message:
+                        message = (
+                            "微博搜索接口返回 302（通常是登录态失效或未登录，"
+                            "平台把请求重定向到登录页）。请更新该平台的 Cookie，"
+                            "或先用有头模式扫码登录复用登录态。"
+                        )
+                    utils.logger.error(
+                        f"[WeiboCrawler.search] 抓取关键词[{keyword}]第{page}页失败，"
+                        f"跳过该关键词剩余页: {message}"
+                    )
+                    stop_paging = True
+                    break
                 note_id_list: List[str] = []
                 note_list = filter_search_result_card(search_res.get("cards"))
                 # If full text fetching is enabled, batch get full text of posts
@@ -196,6 +219,15 @@ class WeiboCrawler(AbstractCrawler):
                             note_id_list.append(mblog.get("id"))
                             await weibo_store.update_weibo_note(note_item)
                             await self.get_note_images(mblog)
+
+                guard.finish_page(len(note_id_list))
+                if guard.too_many_empty_pages:
+                    utils.logger.warning(
+                        f"[WeiboCrawler.search] 连续 {guard.empty_pages} 页在时间窗口内没有数据，"
+                        f"停止翻页（窗口可能无匹配内容）: {guard.summary(keyword)}"
+                    )
+                    stop_paging = True
+                    break
 
                 page += 1
 

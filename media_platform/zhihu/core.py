@@ -216,6 +216,11 @@ class ZhihuCrawler(AbstractCrawler):
                 except DataFetchError:
                     utils.logger.error("[ZhihuCrawler.search] Search content error")
                     return
+                except Exception as fetch_exc:
+                    # 与抖音同理：只捕获 DataFetchError 兜不住其他异常，
+                    # 会让进程整体崩溃，已采集数据来不及正常收尾。
+                    utils.logger.error(f"[ZhihuCrawler.search] Search content exception: {fetch_exc}")
+                    return
             utils.logger.info(f"[ZhihuCrawler.search] {guard.summary(keyword)}")
 
     async def batch_get_content_comments(self, content_list: List[ZhihuContent]):

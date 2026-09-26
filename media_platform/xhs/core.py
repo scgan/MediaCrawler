@@ -191,16 +191,40 @@ class XiaoHongShuCrawler(AbstractCrawler):
                         await self.get_notice_media(note_detail)
                         note_ids.append(note_detail.get("note_id"))
                         xsec_tokens.append(note_detail.get("xsec_token"))
+                    guard.finish_page(len(note_ids))
                     page += 1
                     utils.logger.info(f"[XiaoHongShuCrawler.search] Note details: {note_details}")
                     if note_ids:
                         await self.batch_get_note_comments(note_ids, xsec_tokens)
+
+                    if guard.too_many_empty_pages:
+                        utils.logger.warning(
+                            f"[XiaoHongShuCrawler.search] 连续 {guard.empty_pages} 页在时间窗口内没有数据，"
+                            f"停止翻页（窗口可能无匹配内容）: {guard.summary(keyword)}"
+                        )
+                        break
 
                     # Sleep after each page navigation
                     await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
                     utils.logger.info(f"[XiaoHongShuCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
                 except DataFetchError:
                     utils.logger.error("[XiaoHongShuCrawler.search] Get note detail error")
+                    break
+                except Exception as fetch_exc:
+                    # ★ 验证码（HTTP 461）触发的是【通用 Exception】而不是 DataFetchError，
+                    # 所以原来的 except DataFetchError 根本拦不住，异常一路冒泡到
+                    # main.py，进程以退出码 1 结束 —— 本次采集已入库的数据
+                    # 也来不及正常收尾。这里改为捕获通用异常并降级处理。
+                    message = str(fetch_exc)
+                    if "CAPTCHA" in message or "461" in message:
+                        message = (
+                            "小红书返回验证码（HTTP 461）：请求频率过高，平台要求人工验证。"
+                            "建议降低爬取频率（调大 CRAWLER_MAX_SLEEP_SEC）、"
+                            "减小 max_notes_count，或更新该平台 Cookie 后重试。"
+                        )
+                    utils.logger.error(
+                        f"[XiaoHongShuCrawler.search] 抓取关键词[{keyword}]失败，跳过: {message}"
+                    )
                     break
             utils.logger.info(f"[XiaoHongShuCrawler.search] {guard.summary(keyword)}")
 

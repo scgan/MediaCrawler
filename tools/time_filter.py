@@ -464,10 +464,47 @@ class SearchTimeGuard:
             getattr(config, "TIME_FILTER_OUT_OF_RANGE_ACTION", "skip") or "skip"
         ).strip().lower()
         self.enabled = get_time_range_filter().enabled
+        # 连续「整页都没有留下任何数据」的页数。
+        # 用途：窗口内无数据时（例如窗口设在一年前，搜索结果全是近期内容），
+        # skip 策略会一路翻页直到达到放宽后的预算（可能几十上百页），
+        # 既浪费时间又极易触发平台限流 —— 实测微博因此被 302、
+        # 小红书被 461 验证码，最终整个进程崩溃、已采到的数据也没保存。
+        self._empty_pages = 0
+        self._max_empty_pages = max(
+            0, int(getattr(config, "TIME_FILTER_MAX_EMPTY_PAGES", 5) or 0)
+        )
 
     @property
     def reached_limit(self) -> bool:
         return self.max_notes_count > 0 and self.kept >= self.max_notes_count
+
+    def finish_page(self, page_kept: int) -> None:
+        """每页结束后调用，登记本页保留条数（用于连续空页判定）。
+
+        :param page_kept: 本页通过过滤并被保存的条数
+        """
+        if not self.enabled:
+            return
+        if page_kept > 0:
+            self._empty_pages = 0
+        else:
+            self._empty_pages += 1
+
+    @property
+    def too_many_empty_pages(self) -> bool:
+        """连续太多页没有采到任何数据 -> 应当停止翻页。
+
+        只在【开启时间过滤】且配置了上限时生效，未过滤场景行为完全不变。
+        """
+        if not self.enabled or self._max_empty_pages <= 0:
+            return False
+        if self.kept > 0:
+            return False  # 已经采到数据，说明窗口是可达的，继续翻
+        return self._empty_pages >= self._max_empty_pages
+
+    @property
+    def empty_pages(self) -> int:
+        return self._empty_pages
 
     def page_budget(self, per_page: int) -> int:
         """

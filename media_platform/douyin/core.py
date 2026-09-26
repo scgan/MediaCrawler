@@ -160,6 +160,13 @@ class DouYinCrawler(AbstractCrawler):
                 except DataFetchError:
                     utils.logger.error(f"[DouYinCrawler.search] search douyin keyword: {keyword} failed")
                     break
+                except Exception as fetch_exc:
+                    # 只捕获 DataFetchError 兜不住验证码、JSON 解析等非标准异常，
+                    # 会导致整个进程崩溃（退出码 1）、已入库数据无法正常收尾。
+                    utils.logger.error(
+                        f"[DouYinCrawler.search] 抓取关键词[{keyword}]异常，跳过: {fetch_exc}"
+                    )
+                    break
 
                 page += 1
                 if "data" not in posts_res:
@@ -191,6 +198,14 @@ class DouYinCrawler(AbstractCrawler):
                 # Batch get note comments for the current page
                 if page_aweme_list:
                     await self.batch_get_note_comments(page_aweme_list)
+
+                guard.finish_page(len(page_aweme_list))
+                if guard.too_many_empty_pages:
+                    utils.logger.warning(
+                        f"[DouYinCrawler.search] 连续 {guard.empty_pages} 页在时间窗口内没有数据，"
+                        f"停止翻页（窗口可能无匹配内容）: {guard.summary(keyword)}"
+                    )
+                    break
 
                 # Sleep after each page navigation
                 await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
