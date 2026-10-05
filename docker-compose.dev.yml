@@ -1,0 +1,53 @@
+# ============================================================
+# 开发模式覆盖文件（docker-compose.dev.yml）
+#
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# 或直接用 deploy.sh：
+#   ./deploy.sh dev
+#
+# 作用：把宿主机源码目录直接挂载进容器，改完代码立即生效，
+#       不再需要重新 build 镜像。
+#
+# ★ 为什么默认配置改代码不生效（根因）
+#   镜像里的代码是 docker build 阶段用 `COPY . .` 打进去的快照。
+#     docker compose down  -> 只删容器和网络，不删镜像
+#     docker compose up -d -> 发现镜像已存在就直接复用，不会重新 build
+#   所以无论 down / up 多少次，容器里跑的都是「构建那一刻」的旧代码。
+#   正确做法是 docker compose up -d --build（见 deploy.sh）。
+#
+# 本文件通过 bind mount 让容器直接读宿主机源码，从根本上绕过该问题：
+# 改代码 -> uvicorn --reload 自动重启 -> 立即生效。
+# ============================================================
+
+services:
+  mediacrawler:
+    environment:
+      # 让 entrypoint.sh 用 uvicorn --reload 启动，监听 /app 源码变化
+      MEDIACRAWLER_DEV_RELOAD: "true"
+
+    volumes:
+      # ---- 源码热挂载：宿主机当前目录 -> 容器 /app ----
+      - ./:/app
+
+      # ★★ 关键：/app/.venv 必须单独声明为匿名卷 ★★
+      #
+      # Dockerfile 里虚拟环境建在 /app/.venv（PATH 也指向它），
+      # 而宿主机项目目录通常【没有】.venv。
+      # 如果只写 ./:/app，宿主机的空目录会把容器里装好依赖的 .venv
+      # 整个「遮蔽」掉 -> python 找不到任何第三方包 -> 启动即崩。
+      #
+      # Docker 的挂载规则是「更具体的路径优先」，
+      # 这里声明匿名卷后，/app/.venv 会继续使用镜像内的内容，
+      # 而 /app 下其余文件走宿主机源码。
+      - /app/.venv
+
+      # 同理保护前端依赖（若宿主机未执行 npm install）
+      - /app/node_modules
+
+      # 以下沿用主 compose 的数据卷，避免被 ./:/app 覆盖后丢失
+      - ./data:/app/data
+      - ./browser_data:/app/browser_data
+
+      # entrypoint 也挂载，方便调试启动逻辑（改完重启容器即可）
+      - ./docker/entrypoint.sh:/entrypoint.sh:ro

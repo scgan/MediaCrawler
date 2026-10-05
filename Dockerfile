@@ -74,6 +74,12 @@ RUN set -eux; \
 # 安装 uv
 RUN pip install --no-cache-dir -i "${PYPI_INDEX_URL}" uv
 
+# uvicorn --reload 依赖 watchfiles。
+# 开发模式（docker-compose.dev.yml / ./deploy.sh dev）用它做源码热重载；
+# 体积很小，直接预装，避免开发时容器内缺包导致热重载不可用
+# （entrypoint 已做降级：万一没装也不会阻止启动）。
+RUN pip install --no-cache-dir -i "${PYPI_INDEX_URL}" watchfiles
+
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen || uv sync
 

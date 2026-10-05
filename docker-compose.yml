@@ -1,3 +1,33 @@
+# ============================================================
+# ★★ 重要：改代码后如何让容器生效 ★★
+#
+# 镜像里的代码是 docker build 阶段用 `COPY . .` 打进去的【快照】。
+# 因此下面这条常见操作【不会】更新代码：
+#
+#     docker compose down && docker compose up -d      # ❌ 代码还是旧的
+#
+#   原因：down 只删除容器和网络，不删镜像；
+#        up -d 发现镜像已存在就直接复用，不会重新 build。
+#
+# 正确做法（任选其一）：
+#
+#   1) 一键脚本（推荐）
+#        ./deploy.sh            # 自动检测源码变化并重建
+#        ./deploy.sh rebuild    # 强制全量重建
+#        ./deploy.sh dev        # 开发模式：代码热挂载，改完即生效
+#
+#   2) 手动镜像模式
+#        docker compose up -d --build
+#        # 或 docker compose build mediacrawler && docker compose up -d
+#
+#   3) 开发模式（改代码不用重建）
+#        docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# 另：本文件中 environment 的改动（如并发数、headless）属于【运行时】配置，
+#     不需要重建镜像，但必须 `up -d` 重新创建容器才会生效
+#     （单纯 restart 不会重新读取 environment）。
+# ============================================================
+
 services:
   mediacrawler:
     build:
