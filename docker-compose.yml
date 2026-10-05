@@ -80,6 +80,14 @@ services:
     # 即便已加 --disable-dev-shm-usage，调大到 4GB 仍是零成本的双保险。
     shm_size: "4gb"
 
+    # 显式指定 DNS。
+    # 容器默认 DNS 常落到 1.1.1.1 / 8.8.8.8，校园网或内网环境下 1.1.1.1 不通，
+    # 解析偶发卡 ~4s 甚至超时，连带快手等平台 ConnectTimeout、进程退出码 1、零数据。
+    # 换成国内可达的公共 DNS 后解析稳定。
+    dns:
+      - "223.5.5.5"
+      - "114.114.114.114"
+
     security_opt:
       - seccomp:unconfined
 

@@ -23,6 +23,7 @@
 # @Desc    : Bilibili Crawler
 
 import asyncio
+import re
 import os
 # import random  # Removed as we now use fixed config.CRAWLER_MAX_SLEEP_SEC intervals
 from asyncio import Task
@@ -177,6 +178,24 @@ class BilibiliCrawler(AbstractCrawler):
             text = (value or "").strip()
             if not text:
                 return ""
+            # ★ 兼容后端下推的 epoch 时间戳（9~19 位纯数字）。
+            #
+            # 后端 zhengwu_analysis 为保证时区无歧义，发布时间窗口一律下发
+            # 【秒级时间戳的数字串】，例如 start_time="1789049040"
+            # （传日期字符串会被按爬虫容器本地时区解释，造成 8 小时偏移）。
+            # 微博 / 小红书 / 快手走 tools.time_filter.parse_user_time()，
+            # 其 _DIGITS_RE 能识别这种数字串；但 B 站不走那条路，
+            # 原实现只做字符串切分，把 "1789049040" 当成日期原样返回，
+            # 随后 pd.date_range(start="1789049040") 抛
+            #   DateParseError: year 1789049040 is out of range
+            # → 进程崩溃（退出码 1）→ 采集 0 条。
+            # 这里对齐后端契约：数字串先按时间戳转成日期。
+            if re.match(r"^\d{9,19}$", text):
+                try:
+                    return datetime.fromtimestamp(int(text)).strftime("%Y-%m-%d")
+                except (ValueError, OSError, OverflowError):
+                    # 超出时间戳范围（如 1970 前的负数或极大值）时退回原逻辑
+                    pass
             return text.split(" ")[0].split("T")[0].replace("/", "-")
 
         start_day = _to_day(getattr(config, "START_TIME", ""))

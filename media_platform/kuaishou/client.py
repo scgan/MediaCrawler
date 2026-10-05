@@ -43,7 +43,10 @@ from .graphql import KuaiShouGraphQL
 class KuaiShouClient(AbstractApiClient, ProxyRefreshMixin):
     def __init__(
         self,
-        timeout=10,
+        # 默认超时由 10s 放宽到 30s。
+        # 校园网到快手 TLS 握手偶发 5~18s 抖动，10s 太紧会直接打崩进程
+        # （表现为 ConnectTimeout / 退出码 1 / 采集 0 条）。
+        timeout=30,
         proxy=None,
         *,
         headers: Dict[str, str],
